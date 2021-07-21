@@ -1,0 +1,152 @@
+---
+title: "Übung 7"
+author: "Lilli Schuckert"
+date: "21 5 2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(pscl, haven, nnet, janitor, tidyverse, broom, ordinal, dplyr)
+
+data_dir <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2")
+easyfit_file <- file.path(data_dir, "easyFit.csv")
+
+easyFit_tbl <- read_csv(easyfit_file) %>% 
+  clean_names %>% 
+  mutate(weight_cat = as.factor(weight_cat))
+
+easyFit_poisson <- read_csv(easyfit_file) %>% 
+  clean_names %>% 
+
+```
+
+## Aufgabe 1
+1.Rechnen Sie eine ordinale Regression auf dem Datensatz
+
+```{r ordinale Regression}
+
+dput(names(easyFit_tbl))
+str(easyFit_tbl)
+
+ologit_fit <- polr(weight_cat ~ age + gender + sport + time_taken +
+                     bloodpressure + height + pet,
+                   data = easyFit_tbl)
+ologit_fit %>% summary
+ologit_fit %>% confint %>% exp
+
+coef_df <- summary(ologit_fit) %>% coef
+p_n <- pnorm(abs(coef_df[, "t value"]), lower.tail = FALSE) * 2
+p_t <- pt(abs(coef_df[, "t value"]), df = 3, lower.tail = FALSE) * 2
+
+cbind(coef_df,
+      p_n = round(p_n, 3),
+      p_t = round(p_t, 3))
+
+# ologit_fit %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+# ologit_fit
+```
+
+## Aufgabe 2
+1. Rechnen Sie eine multinomiale Regression auf dem Endpunkt "city"
+2. Reduzieren Sie im Zweifel die Anzahl der Städte
+  --> Anzahl der Städte auf 3 reduzieren
+
+```{r multinomiale Regression}
+
+dput(names(easyFit_tbl))
+
+easyFit_multinomial <- dplyr::select(filter(easyFit_tbl, 
+                                    city == 'Berlin' | 
+                                    city == 'Hamburg' | 
+                                    city == 'Salzburg'),
+                             c('weight_cat', 'weight', 'weight_bin', 'age',
+                               'gender', 'sport',
+                               'time_taken', 'city' , 'bloodpressure' , 'height',
+                               'creatinin', 'pet')) %>% 
+  mutate_if(is.character, as.factor)
+
+dput(names(easyFit_multinomial))
+
+easyFit_multinomial$city2 <- relevel(easyFit_multinomial$city, ref = "Berlin")
+
+
+multinom_fit <- multinom(city2 ~ weight_cat  + age + gender + sport + time_taken +
+                           bloodpressure + height + creatinin + pet,
+                         data = easyFit_multinomial)
+
+multinom_fit %>% summary
+multinom_fit %>% confint %>%  exp
+
+z_mat <- summary(multinom_fit)$coefficients/summary(multinom_fit)$standard.errors
+p_n <- (1 - pnorm(abs(z_mat), 0, 1)) * 2
+multinom_fit %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+```
+
+## Aufgabe 3
+1. Nutzen Sie die logistische Regression und Datenaufteilung um eine ordinale Regression zu umgehen.
+2. Was sind Probleme die jetzt auftreten?
+  --> schwierig zu Interpretieren, weil man 3 Modelle hat, die man miteinander vergleichen muss
+
+```{r logistische Regression und Datenaufteilung}
+
+ologit_tbl <- easyFit_multinomial %>%
+  mutate(city = as.factor(city))
+
+ologit_tbl$city %>% table
+
+ologit_01_tbl <- ologit_tbl %>%
+  filter(city %in% c('Berlin', 'Hamburg'))
+
+ologit_02_tbl <- ologit_tbl %>%
+  filter(city %in% c('Berlin', 'Salzburg'))
+
+ologit_12_tbl <- ologit_tbl %>%
+  filter(city %in% c('Hamburg', 'Salzburg'))
+
+## dreimal regression
+
+log_fit_01 <- glm(city ~ weight_cat  + age + gender + sport + time_taken +
+                           bloodpressure + height + creatinin + pet,
+                  data = ologit_01_tbl,
+                  family = binomial)
+
+log_fit_02 <- glm(city ~ weight_cat  + age + gender + sport + time_taken +
+                           bloodpressure + height + creatinin + pet,
+                  data = ologit_02_tbl,
+                  family = binomial)
+
+log_fit_12 <- glm(city ~ weight_cat  + age + gender + sport + time_taken +
+                           bloodpressure + height + creatinin + pet,
+                  data = ologit_12_tbl,
+                  family = binomial)
+
+
+log_fit_01 %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+log_fit_02 %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+log_fit_12 %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+
+```
+
+## Aufgabe 4
+1. Rechnen Sie eine Poisson Regression auf dem Datensatz. Im Zweifel transformieren Sie eine Variable in der Form, dass eine Poisson Regression möglich ist.
+2. Was ist Overdispersion?
+3. Wie Interpretieren Sie den Effektschätzer?
+4. Wie können Sie die absoluten Änderungen im Outcome mit der Veränderung von x um eine Einheitbestimmen?
+5. Skizzieren Sie „zero-inflation“.
+6. Was ist der Unterschied zwischen einem Odds (Chance) und einem Risiko (risk)?
+
+```{r poisson regression}
+
+data <- read_csv("jump_length_rein.csv") %>% 
+  mutate(jump_length = cut((jump_length),breaks = c(-Inf,10,20,30,40,Inf)))
+
+##cut_interval() makes n groups with equal range,
+##cut_width() makes groups of width width.
+##cut() sets intervals
+
+```
+

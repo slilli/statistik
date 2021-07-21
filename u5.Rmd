@@ -1,0 +1,222 @@
+---
+title: "Übung 5"
+author: "Lilli Schuckert"
+date: "12 5 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, plyr, car, rcompanion, lmtest,
+               olsrr, ggdag, dagitty, janitor, tableone,
+               broom, rcompanion)
+
+data_dir <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2")
+easyfit_file <- file.path(data_dir, "easyFit_05.csv")
+
+easyFit_gaussian_tbl <- read_csv(easyfit_file) %>%
+  clean_names %>% 
+  mutate_if(is.character, as.factor) %>% 
+  select(-weight_bin, -weight_cat)
+
+easyFit_logistic_tbl <- read_csv(easyfit_file) %>%
+  clean_names %>% 
+  mutate_if(is.character, as.factor) %>% 
+  select(-weight)
+
+```
+
+## Aufgabe 1
+1. Rechnen Sie eine multiple gaussian lineare Regression
+2. Rechnen Sie eine multiple logistische Regression
+3. Wählen Sie die Variablen nach univariten Signifkanztests aus.
+4. Erklären Sie Ihren Ergebnisse
+  - Standardabweichung ist geringer bei signifikanten Variablen
+
+--> univariate Selektion ist schlecht
+--> es gibt noch einen anderen weg als mit der table one
+
+```{r multiple gaussian linear regression}
+
+lm(weight ~ age + gender + sport + time_taken + city + bloodpressure + height +
+                  creatinin + pet,
+                  data = easyFit_gaussian_tbl, family = gaussian) %>%  summary
+
+## -- Selektion nach univariater Signifikanz --
+
+str(easyFit_tbl)
+# CreateTableOne(data = easyFit_tbl, factorVars = c("gender", "easy_fit", "city",
+#                                                 "pet"), strata = "weight")
+
+sign_modell <- lm(weight ~ gender + time_taken + city,
+                   data = easyFit_gaussian_tbl) %>% summary
+sign_modell
+
+```
+
+
+```{r multiple logistic regression}
+
+glm(as.factor(weight_bin) ~ age + gender + sport + time_taken + calories +
+      city + bloodpressure + height + creatinin + pet,
+    data = easyFit_logistic_tbl, 
+    family = binomial(link = "logit")) %>%  summary
+
+# -- Selektion nach univariater Signifikanz--
+
+```
+
+## Aufgabe 2
+1. Rechnen Sie eine multiple gaussian lineare Regression
+2. Rechnen Sie eine multiple logistische Regression
+3. Wählen Sie die Variablen nach dem Informatiuonskriterium aus.
+4. Erklären Sie Ihren Ergebnisse
+
+```{r Informationskriterium gaussian linear regression}
+
+model_null <- lm(weight ~ 1, data = easyFit_gaussian_tbl)
+
+model_full <- lm(weight ~ age + gender + sport + time_taken + city +
+                   bloodpressure + height + creatinin + pet,
+                  data = easyFit_gaussian_tbl, family = gaussian)
+model_full %>%  summary
+
+## -- Selektion nach Informationskriterium --
+# step_fit <- step(model_null,
+#                  scope = list(upper = model_full),
+#                  direction = "both") 
+# step_fit %>% summary
+
+MASS::stepAIC(model_full, direction = "backward", trace = FALSE) %>% summary
+
+## -- Regression mit selektierten Variablen -- 
+inforkrit <- lm(weight ~ age + height + gender + time_taken,
+                data = easyFit_gaussian_tbl) %>% summary
+inforkrit
+
+```
+
+```{r Informationskriterium multiple logistic regression}
+
+model_null <- glm(as.factor(weight_bin) ~ 1, data = easyFit_logistic_tbl,
+                  family = binomial(link = "logit"))
+
+model_full <- glm(as.factor(weight_bin) ~ age + gender + sport + time_taken +
+      city + bloodpressure + height + creatinin + pet, data = easyFit_logistic_tbl, 
+    family = binomial(link = "logit"))
+model_full %>% tidy(exponenciate = TRUE)
+
+# step_fit <- step(model_null,
+#                  scope = list(upper = model_full),
+#                  direction = "both") 
+# step_fit %>% summary
+
+MASS::stepAIC(model_full, direction = "backward") %>% summary
+
+# -- Regression mit selektierten Variablen --
+inforkrit <- glm(as.factor(weight_bin) ~ height + gender, data = easyFit_logistic_tbl,
+    family = binomial (link = "logit")) %>% tidy(exponenciate = TRUE)
+inforkrit
+
+```
+
+## Aufgabe 3
+1. Rechnen Sie eine multiple gaussian lineare Regression
+2. Rechnen Sie eine multiple logistische Regression
+3. Erstellen Sie selber die Modelle (mindestens 4 Stück) und vergleichen Sie diese Modelle mit dem logratioTest und der ANOVA.
+4. Erklären Sie Ihre Ergebnisse
+
+```{r logratioTest und ANOVA}
+
+# -- multiple gaussian lineare regression --
+lm(weight ~ age + gender + sport + time_taken + city + bloodpressure + height + 
+     creatinin + pet, 
+   data = easyFit_gaussian_tbl,
+   family = gaussian) %>% summary
+
+# -- multiple logistische regression --
+glm(as.factor(weight_bin) ~ age + gender + sport + time_taken +
+      city + bloodpressure + height + creatinin + pet,
+    data = easyFit_logistic_tbl, 
+    family = binomial(link = "logit")) %>% summary
+
+# -- 4 Modelle erstellen
+model.1 <- lm(weight ~ gender + time_taken + city, data = easyFit_gaussian_tbl)
+model.2 <- lm(weight ~ age + height + gender + time_taken, data = easyFit_gaussian_tbl)
+model.3 <- lm(weight ~ height + gender, data = easyFit_gaussian_tbl)
+model.4 <- lm(weight ~ height, data = easyFit_gaussian_tbl)               
+               
+## was ist mein bestes Modell nach AIC, adjRS
+compareLM(model.1, model.2, model.3, model.4)
+
+## modelle vergleichen mit anova und logratio
+#links bei anova das einfachere modell
+# anova(model.1, model.2, test = "Chisq")
+# anova( model.3, model.4, test = "Chisq")
+# --> nur nested modelle vergleichen
+# --> wenn DF gleich ist, geht es nicht...--> bei nested modell nie gleich
+# --> nach Analyse der Varianz: Welches der Modelle erklärt mehr Varianz
+
+
+lrtest(model.1, model.2) %>%  tidy()
+#gleiche anforderungen wie bei der anova
+# --> likelihood ratio test: welches Modell ist am plausibelsten
+
+```
+
+
+## Aufgabe 4
+1. Erklären Sie an dem Beispiel easyFit das Prinzip des EPV.
+- Events per variable
+- Maß, um die Menge an Informationen in einem Datensatz (die Anzahl der Ereignisse oder der Stichprobenumfang) relativ zur Anzahl der zu schätzenden Regressionskoeffizienten (die Anzahl der Variablen) zu definieren
+- Nichtauswahl einer Variable: entspricht einem geschätzten Regressionskoeffizienten von Null
+  --> diese Formel sollte daher immer alle Kandidatenvariablen berücksichtigen
+- EPV quantifiziert das Gleichgewicht zwischen der Menge an Informationen, die die Daten liefern, und der Anzahl der unbekannten Parameter, die geschätzt werden müssen
+- min of 5-15 EPV (kommt auf den Kontext an)
+linear: n = 300 -> 300 : 10 = 30
+logistisch: nicht n = 300 sondern nur anzahl der events -> 28:10 = 2,8
+- calories raus wegen zu starker korrelation
+
+2. Was müssen Sie beachten, bevor Sie eine Variablenselektion machen können?
+- impute missing values wenn nötig
+- Korrelationsdiagramm
+- Normalverteilt, zähldaten...?
+- daten reinigen
+- outlier betrachten
+- EPV für modell aufstellen
+- welche variablen  machen mehr sinn und welche nicht --> welches ziel hat mein modell?
+--> dann Selektion 
+
+3. Worum handelt es sich bei ggdag und an welcher Stelle der Variablenselektion (vgl. Heinze 2017 Bim J)?
+- library(ggdag) für directed acyclic graphs
+- IV: Instrumentalvariablen werden verwendet, um kausale Beziehungen zu schätzen, wenn kontrollierte Experimente nicht durchführbar sind oder wenn eine Behandlung nicht erfolgreich an jede Einheit in einem randomisierten Experiment abgegeben wird
+- hilfreich, eine Skizze eines Graphen zu entwerfen, der die angenommenen kausalen Abhängigkeiten zwischen den IVs visualisiert, wobei der Formalisierungsgrad dieser Abhängigkeiten manchmal den eines gerichteten azyklischen Graphen erreichen kann
+- Vor der Variablenselektion
+- DAG: Annahme über Beziehungen zwischen Variablen
+
+4. Nennen Sie im Kontext des Beispiel die 5 Mythen der Variablenselektion.
+Myth 1: “The number of variables in a model should be reduced until there are 10 events per variables.”No!
+  --> Bei easyFit mehr als 10 Events Pro Variable
+  --> keine festgeschriebene Regel
+  
+Myth 2: “Only variables with proven univariable-model significance should be included in a model.”No!
+  --> Aufgabe 1 und 2: andere Variablen je nach Test (Univariater Signifikanztest oder nach Informationskriterium)
+  -->besser aic als univariat
+  
+Myth 3: “Insignificant effects should be eliminated from a model.”No!
+  --> Eine Variable aus einem Modell zu eliminieren bedeutet, ihren Regressionskoeffizienten auf genau Null zu setzen
+  --> Auf diese Weise entfernt man sich von einer Maximum-Likelihood-Lösung
+  --> berichtet ein Modell, das absichtlich suboptimal ist.
+  --> Das Eliminieren von schwachen Effekten kann auch gefährlich sein, da in ätiologischen Studien ein Bias durch das fälschliche Weglassen eines wichtigen Confounders entstehen könnte.
+  --> In Aufgabe 1 wählt man nach Signifikanz aus --> nicht gut und soll man nur machen, wenn es einem vorgeschrieben ist  
+  --> effekt wird erklärt durch variablen
+
+Myth 4: “The reported P-value quantifies the type I error of a variable being falsely selected.”No!
+  --> während die Wahrscheinlichkeit eines Fehlers vom Typ I hauptsächlich vom Signifikanzniveau abhängt, ist ein P-Wert ein Ergebnis der Datenerhebung und -analyse und quantifiziert die Plausibilität der beobachteten Daten unter der Nullhypothese. Daher quantifiziert der P-Wert nicht den Typ-I-Fehler 
+  --> es besteht auch die Gefahr der falschen Eliminierung von Variablen 
+  --> p werte bei stepwise selection kann man nicht so gut interpretieren
+
+Myth 5: “Variable selection simplifies analysis.”No!
+  --> richtige Variablen zu selektieren ist so kompliziert, dass es leichter wäre eine Analyse am kompletten Modell durchzuführen
+  --> Gefahr von falscher Selektion

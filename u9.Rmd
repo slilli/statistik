@@ -1,0 +1,103 @@
+---
+title: "Übung 9"
+author: "Lilli Schuckert"
+date: "9 6 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, plyr, broom, broom.mixed, magrittr,
+               parameters, stargazer, geepack, datarium, lme4,
+               janitor)
+
+data_dir <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2")
+politeness_file <- file.path(data_dir, "politeness_data.csv")
+politeness <- read_csv(politeness_file)
+```
+
+##Aufgabe 1
+1. Warum heißt ein gemischtes Modell ein gemischtes Modell? Was ist hier gemischt? Was sind “fixedeffects” und was sind “random effects”?
+  - weil es aus "fixed" und "random" effects besteht
+  - fixed effect: ein oder mehrere Faktoren, die geprüft werden sollen
+  - Random effect: ein oder mehrere Faktoren, von denen die Variabilität
+  ausgeklammert/reduziert werden soll.
+
+2. Wie würden Sie entscheiden, ob eine Variable ein “fixed effect” oder ein “random effect” ist? Geben Siehierfür ein Beispiel.
+  - Fixed effect: Something the experimenter directly manipulates and is often repeatable,     e.g., drug administration - one group gets drug, one group gets placebo.
+  - Random effect: Source of random variation / experimental units e.g., individuals drawn    (at random) from a population for a clinical trial. Random effects estimates the            variability
+  
+3. Wie kann “age” als zufälliger Effekt mit in ein gemischtes Modell genommen werden? Was ist das Problem mit der Variable “age”?
+  - als random effect
+  - zu viele Gruppierungen
+  - random effect sollte eig group effect sein --> bei mountain_range wenig
+  
+4. Beschrieben Sie ein experimentelles Setting mit “genesteten” Variablen. Wie modellieren Sie “genestete Variablen”?
+  - Bsp.: Drachen: Auf welcher Site auf welchem Berg
+  -   dragons_tbl %<>%
+        mutate(sample_chr = str_c(mountain_range, ":", site),
+        sample_fct = as.factor(sample_chr))
+
+
+##Aufgabe 2
+1. Zeichnen Sie eine typische Abbildung mit mehreren Zeitpunkten, die eine Analyse mit einem gemischten Modell verlangt. Zum Beispiel zwei “Treatments (Trt)” über mehrere Zeitpunkte.
+2. Skizieren Sie den zugehörigen Datensatz.
+3. Wie sehe eine Modellierung im R Package lme4 für ihren Beispieldatensatz aus?
+
+lmer_fit <- lmer(test_score ~ trt + (1 | hospital),
+                 data = data)
+
+summary(lmer_fit)
+lmer_fit %>% parameters()
+
+4. Wie sehe ein Datensatz mit einem „Cluster“ aus?
+  - clustern nach z.B krankenhaus
+
+
+##Aufgabe 3
+Das Tutorium von Bodo Winter gibt Ihnen hier Hilfestellung (bw_lme_tutorial2.pdf)
+1. Laden Sie den Datensatz politeness_data.txt in R.
+2. Rechnen Sie ein gemischtes Modell auf den Daten.
+3. Geben Sie ein KI und die p-Werte an.
+4. Interpretieren Sie das Ergebnis.
+
+```{r}
+
+politeness_tbl <- politeness %>%
+  as_tibble %>%
+  clean_names
+
+lmer_fit <- lmer(frequency  ~  attitude  + (1|subject),
+                 data=politeness_tbl)
+summary(lmer_fit)
+lmer_fit %>% parameters()
+
+
+lmer_fit_tbl <- lmer_fit %>% broom.mixed::tidy(conf.int = TRUE) %>%
+  filter(effect == "fixed" & term != "(Intercept)") %>%
+  select(term, estimate, conf.low, conf.high)
+
+lmer_fit_pvalue_tbl <- lmer_fit %>% p_value
+
+left_join(lmer_fit_tbl, lmer_fit_pvalue_tbl,
+          by = c("term" = "Parameter"))
+
+
+```
+
+##Aufgabe 4
+1. Wieviel Prozent der Varianz erklären die zufälligen Effekte? Wie können Sie dies aus der summary()des lmer() abschätzen?
+  - 3982/(3982+851) ~ 0.82 = 82%
+  
+2. Was sind mögliche Effektschätzer eines glmer()?
+  - effektschätzer der jeweiligen Familien: gaussian, poisson, binomial
+
+3. Was bedeutet es, wenn Sie eine zufällige Steigung mit zu dem zufälligen Intercept in ein gemischtes Modellaufnehmen? Erläutern Sie dies mit der Funktion coef()an dem Beispiel politeness_data.txt.
+  
+```{r}
+coef(lmer_fit)
+
+```
+
+

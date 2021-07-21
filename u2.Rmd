@@ -1,0 +1,249 @@
+---
+title: "übung2"
+author: "Lilli Schuckert"
+date: "27 4 2021"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+##echo = TRUE indicates that the code will be shown in the final document
+##echo = FALSE indicates that the code will not be shown in the final document
+pacman::p_load(tableone, table1, survival, tidyverse, janitor,
+               PerformanceAnalytics, ggpubr, magrittr, mvtnorm, plyr, simstudy,
+               broom, mosaic, PerformanceAnalytics, FSA, psych, car, rcompanion,
+               lmtest, olsrr, blorr, sjPlot)
+
+birds <- read.csv("birds.csv")
+```
+
+## Aufgabe 1 
+
+```{r data, echo = FALSE}
+
+birds_tbl <- as_tibble(birds)
+birds_tbl
+
+```
+
+### 1.Univariate Übersichtstabelle mit tableone
+### 2. Fehlende Werte und nonnormal Variablen
+
+```{r tableone, echo = FALSE}
+
+## 1. --------------------------------------------------------------------------
+str(birds)
+
+##dput(names(birds))
+myVars <- c("Status", "Length", "Mass", "Range", "Migr", "Insect", 
+            "Diet", "Clutch", "Broods", "Wood", "Upland", "Water", "Release", 
+            "Indiv")
+
+catVars <- c("Status", "Migr", "Diet", "Broods", "Wood", "Upland", "Water")
+
+table_one <- CreateTableOne(vars = myVars, data = birds, factorVars = catVars)
+print(table_one, showAllLevels = TRUE)
+
+## 2. -------------------------------------------------------------------------
+
+summary(table_one)
+hist(birds_tbl$Length)
+
+biomarkers <- c("Length", "Mass", "Indiv")
+print(table_one, nonnormal = biomarkers, formatOptions = list(big.mark = ","))
+```
+
+### 3. Stratifizierung nach einer beliebigen Variable
+
+```{r strata, echo = FALSE}
+
+table_one_strata <- CreateTableOne(vars = myVars, 
+                       strata = "Diet" , ## stratifiziert nach Diet
+                       data = birds_tbl, 
+                       factorVars = catVars)
+
+print(table_one_strata, nonnormal = biomarkers,
+      formatOptions = list(big.mark = ",")) 
+
+```
+
+## Aufgabe 2
+
+```{r table1, echo = FALSE}
+#2.1
+table1(~ factor(Migr) + Length + Mass| Status, data = birds_tbl)
+
+#2.2
+table1( ~factor(Migr) + Length + Mass | Status*Wood, data = birds_tbl)
+
+``` 
+
+
+## Aufgabe 4: Multiple logistic linear regression
+
+```{r multiple logistic linear regression, echo = FALSE}
+## Clean Data ---------------------------------------------------------------
+
+birds_file <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2", "birds.csv")
+birds2_tbl <- read_csv(birds_file) %>% 
+  clean_names %>% 
+  mutate_if(is.character, tolower)
+birds2_tbl
+
+birds_num_tbl <- birds2_tbl %>% 
+  select_if(is.numeric)
+birds_num_tbl
+
+chart.Correlation(birds_num_tbl,
+                  method = "spearman",
+                  histogram = TRUE,
+                  pch = 16)
+
+## -- Missing Data --
+CreateTableOne(data = birds_num_tbl) %>% summary
+
+## -- Compute MDS to look at the samples --
+mds_tbl <- birds_num_tbl %>%
+  select(-status) %>% 
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2"))
+
+ggscatter(mds_tbl, x = "dim_1", y = "dim_2", 
+          label = birds2_tbl$species,
+          size = 1,
+          repel = TRUE) 
+
+## -- clean samples and compute MDS --
+birds_clean_tbl <- birds2_tbl %>%
+  select(-status) %>%
+  filter(!species %in% c("cyg_olor")) 
+
+mds_clean_tbl <- birds_clean_tbl %>%
+  select(-species) %>% 
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2")) %>%
+  mutate(id = birds_clean_tbl$species)
+
+ggscatter(mds_clean_tbl, x = "dim_1", y = "dim_2", 
+          label = birds_clean_tbl$species,
+          size = 1,
+          repel = TRUE) 
+
+wanted_ids_clean <- mds_clean_tbl %>%
+  filter(dim_1 > -1000) %>%
+  pull(id)
+
+## -- clean samples part 2 and compute MDS
+
+birds_clean_tbl <- birds2_tbl %>%
+  select(-status) %>%
+  filter(species %in% wanted_ids_clean) 
+
+mds_clean_tbl <- birds_clean_tbl %>%
+  select(-species) %>% 
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2")) %>%
+  mutate(id = birds_clean_tbl$species)
+
+ggscatter(mds_clean_tbl, x = "dim_1", y = "dim_2", 
+          label = birds_clean_tbl$species,
+          size = 1,
+          repel = TRUE) 
+
+birds_clean_tbl <- birds2_tbl %>%
+  filter(species %in% wanted_ids_clean) %>%
+  na.omit
+
+## -- check if one has thrown out all 0 and 1 --
+table(birds_clean_tbl$status)
+
+## Multiple logistic linear regression -----------------------------------------
+
+model_null <- glm(status ~ 1,
+                  data = birds_clean_tbl,
+                  family = binomial(link = "logit"))
+
+model_full <- glm(status ~ length + wood + as.factor(diet),
+                  data = birds_clean_tbl,
+                  family = binomial (link = "logit"))
+
+model_null %>% summary
+model_full %>% summary
+model_full %>%  tidy(exponentiate = TRUE, conf.int = TRUE )
+
+## --Pseudo R^2--
+blr_model_fit_stats(model_full)
+
+## --check if regression is correct--
+# blr_confusion_matrix(model_full)
+
+## --Interaktion--
+ggplot(birds_clean_tbl, aes(as.factor(wood), length)) +
+  geom_boxplot() +
+  geom_jitter()
+
+ggplot(birds_clean_tbl, aes(as.factor(diet), length)) +
+  geom_boxplot() +
+  geom_jitter()
+
+
+interaction.plot(x.factor = birds$diet,
+                 trace.factor = birds$status,
+                 response = birds$length,
+                 type = "l",
+                 col = c("blue4", "red4"))
+
+pred_water <- predict(birds_clean_tbl, type = "response")
+interaction.plot(x.factor = birds_cc$diet,
+                 trace.factor = birds_cc$status,
+                 response = pred_water,
+                 type = "l",
+                 col = c("blue4", "red4"))
+
+# plot_model(model_full, type = "pred", terms = c("length", "wood", "diet"))
+#
+ birds_plot_tbl <- birds_clean_tbl %>%
+   select(-mass, -species, -range, -migr, -insect, -clutch, -broods, -upland,
+          -water, -release, -indiv)
+
+ chart.Correlation(birds_plot_tbl,
+                   method = "spearman",
+                   histogram = TRUE,
+                   pch = 16)
+
+## --Effektschätzer, Konfidenzintervall, Hypothesen--
+# 
+# Effektschätzer:
+#   wood: faktor-fache chance von 0 auf 1 zu kommen (status)
+# Nullhypothese: Einflussfaktoren haben keinen Einfluss  (=0)
+# KI: ß liegt zu 95 prozentiger wahrscheinlichkeit in dem KI
+# nicht signifikant, weil die 1 überall mit drin ist
+# Pseudo-Bestimmtheitmaß:
+# Im Falle einer linearen Regression beschreibt das Bestimmtheitsmaß den erklärten
+# Anteil der Variabilität (Varianz) einer abhängigen Variablen Y durch ein
+# statistisches Modell
+
+```
+
+## Aufgabe 3: Multiple gaussian linear regression
+
+```{r multiple gaussian linear regression, echo = FALSE}
+
+test <-lm(length ~ status + wood + as.factor(diet) + range,
+                  data = birds_clean_tbl)
+
+test %>% summary
+test %>% tidy(conf.int = TRUE )
+
+#KI: auf 0 achten: enthalten -> nicht signifikant
+```
+
+

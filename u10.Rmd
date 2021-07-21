@@ -1,0 +1,151 @@
+---
+title: "Übung 10"
+author: "Lilli Schuckert"
+date: "16 6 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, magrittr, multcomp, effectsize,
+               parameters, car, readxl)
+
+data_dir <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2")
+fit_file <- file.path(data_dir, "easyFit.csv")
+easyFit_one <- read_csv(fit_file)
+easyFit_two <- read_csv(fit_file)
+easyFit_ancova <- read_csv(fit_file)
+```
+
+##Aufgabe 1
+1. Rechnen Sie eine einfaktorielle ANOVA auf den Daten.
+2. Stellen Sie die ANOVA graphisch dar.
+3. Vergleichen Sie das Outcome von einem Faktor mit zwei Leveln zu einem Faktor mit drei Leveln. Was ist der Unterschied im Bezug auf die Hypothese und die Interpretation?
+  - zwei level:
+      Nullhypothese: x1==x2
+      Alternativhypothese: x1!=x2
+  - drei level: 
+      Nullhypothese: x1 == x2== x2
+      Alternativhypothese: eins unterscheidet sich von den anderen
+4. Bestimmen Sie den Effektschätzer in dem Sie das Paket effectsize nutzen.
+5. Was sagt der Effektschätzer aus?
+  - η2 = 0.01 indicates a small effect;
+  - η2 = 0.06 indicates a medium effect;
+  - η2 = 0.14 indicates a large effect
+  
+  eta_squared etwas wie das r^2
+  
+  - f = 0.10 indicates a small effect;
+  - f = 0.25 indicates a medium effect;
+  - f = 0.40 indicates a large effect
+
+```{r}
+
+easyFit_one <- easyFit_one %>%
+  mutate(easyFit = as.factor(easyFit)) %>% 
+  na.omit
+
+#ANOVA
+fit_one <- lm(weight ~ easyFit, data = easyFit_one) 
+fit_one %>% summary
+fit_one %>% anova
+
+#graphische Darstellung
+ggplot(easyFit_one, aes(x = easyFit, y = weight, fill = easyFit)) +
+  geom_boxplot()
+
+#Effektschätzer
+fit_one %>% anova %>% eta_squared
+fit_one %>% anova %>% cohens_f
+
+```
+
+##Aufgabe 2
+1. Rechnen Sie eine zweiaktorielle ANOVA auf den Daten.
+2. Stellen Sie die ANOVA graphisch dar.
+3. Vergleichen Sie das Outcome von einem Faktor mit zwei Leveln zu einem Faktor mit drei Leveln. Wasist der Unterschied im Bezug auf die Hypothese und die Interpretation?
+4. Bestimmen Sie den Effektschätzer in dem Sie das Paket effectsize nutzen.
+5. Ergänzen Sie einen Interaktionsterm und stellen Sie die Interaktion graphisch dar
+  --> easyFit, gender
+
+```{r}
+
+easyFit_two %<>%
+  mutate_if(is.character, as.factor)
+
+#ANOVA
+fit_two <- lm(weight ~ easyFit + gender + easyFit:gender, data = easyFit_two)
+fit_two %>% summary
+fit_two %>% anova
+
+#graphische Darstellung
+ggplot(easyFit_two, aes(x = easyFit, y = weight, fill = gender)) +
+  geom_boxplot()
+
+#Effektschätzer
+fit_two %>% anova %>% cohens_f
+fit_two %>% anova %>% eta_squared
+```
+
+##Aufgabe 3
+1. Rechnen Sie eine ANCOVA auf den Daten.
+2. Stellen Sie die ANCOVA graphisch dar.
+3. Bestimmen Sie den Effektschätzer in dem Sie das Paketeffectsizenutzen.
+4. Wie unterscheidet sich eine ANCOVA von einer linearen Regression?
+  metrisch: regression
+  nominales Skalenniveau: ancova
+
+```{r}
+
+## ANCOVA (https://www.datanovia.com/en/lessons/ancova-in-r/)
+
+ancova_fit <- easyFit_ancova %>%
+  lm(weight ~ easyFit + bloodpressure + easyFit:bloodpressure, data = .) %>%
+  anova()
+
+ggplot(easyFit_ancova, aes(x = bloodpressure, y = weight, fill = easyFit)) +
+  geom_point(aes(colour = easyFit))
+
+plot(density(easyFit_ancova$residuals))
+
+ancova_fit %>% cohens_f
+
+#eta quared noch
+```
+
+## Aufgabe 4
+1. Zeigen Sie unter welcher Bedingung dert.test(), dieanova()und daslm()annähernd die gleichenErgebnisse liefern.
+  Y = Normalverteilt
+  X = Varianzhomogen
+2. Warum ist dies so? Erklären Sie die Output’s der einzelnen Funktionen.
+3. Warum liefert einglm()nicht die „gleichen Zahlen“ bzw. unter welchen Bedingungen ist dies gegeben?Zeigen Sie dies an einem Beispiel
+  --Y liegt an der family
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

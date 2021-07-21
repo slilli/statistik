@@ -1,0 +1,137 @@
+---
+title: "Übung 8"
+author: "Lilli Schuckert"
+date: "2 6 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, lubridate, survminer, survival,
+               naniar, cutpointr, Hmisc, janitor, magrittr, broom)
+
+data_dir <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2")
+emergency_surv_file <- file.path(data_dir, "emergency_surv.csv")
+em_surv <- read_csv(emergency_surv_file)
+
+vis_miss(em_surv)
+
+## sauberen datensatz
+em_surv_tbl <- em_surv %>%
+  clean_names %>% 
+  as_tibble %>%
+  mutate(height = Hmisc::impute(height, median),
+         weight = Hmisc::impute(weight, median),
+         age = Hmisc::impute(age, median),
+         stroke = Hmisc::impute(stroke, median),
+         bloodpressure = Hmisc::impute(bloodpressure, median)) %>%
+  na.omit
+em_surv_tbl
+
+vis_miss(em_surv_tbl)
+```
+
+##Aufgabe 1
+1. Berechnen Sie die Variable op_time!
+2. Erklären Sie an einer Abbildung den Zusamenhang zwischenZeitundEventan Ihrem Beispieldatensatz.
+3. Was ist zensiert? Erklären Sie die Funktion Surv()und den Output.
+  - Events = 0 sind zensiert
+  - in Tabelle an + erkennbar
+  - output ist in seconds
+  - Surv() creates survival object, used as a response variable
+
+```{r}
+## --op_time: diff between op_start and op_end--
+data_op_time <- em_surv_tbl %>% 
+  select(op_start, op_end, complication, gender, age)
+
+data_op_time <- data_op_time %>% 
+  mutate(
+    op_start = as.POSIXct(op_start, format = "%d%m%Y %H:%M:%S"),
+    op_end = as.POSIXct(op_end, format = "%d%m%Y %H:%M:%S")
+  ) %>% 
+  mutate(
+    op_time = as.POSIXct(op_end) - as.POSIXct(op_start)
+  )
+
+## --plot--
+data_op_time %>%
+  select(op_time, complication) %>% 
+  add_column(as.character(Surv(time = data_op_time$op_time,
+                               event = data_op_time$complication,
+                               type = "right")))
+
+ggsurvplot(
+  fit = survfit(Surv(op_time, complication) ~ 1, data = data_op_time), 
+  xlab = "Op time", 
+  ylab = "Overall Complication Propability",
+  risk.table = TRUE)
+```
+
+##Aufgabe 2
+1. Erstellen Sie eine Kaplan Meier Kurve mit p-Wert undrisk table.
+kaplan meier-schätzer: überlebensfunktion: s(t) = p(T>t)
+2. Wie kommt der p-Wert zustande?
+  - durch einen "großen" Chi Quadrat Test (Summe der erwarteten häufigkeiten/tatsächliche häufigkeiten)
+3. Was ist der Effektschätzer einer Kaplan Meier Kurve?
+  - Mediane Überlebenszeit( median statt mittelwert wegen zensierungen)
+
+```{r}
+
+ggsurvplot(
+  fit = survfit(Surv(op_time, complication) ~ gender, data = data_op_time), 
+  xlab = "op time", 
+  ylab = "Overall Complication probability",
+  risk.table = TRUE,
+  pval = TRUE)
+  #break.time.by = 90,
+
+survdiff(Surv(op_time, complication) ~ gender, data = data_op_time)
+```
+
+##Aufgabe 3
+1. Rechnen Sie eine Cox PH Regression.
+2. Für was steht das PH in Cox PH und wie überprüfen Sie PH?
+  - proportional hazard
+3. Erklären Sie an einer Kaplan Meier Kurve, wie Sie PH erkennen und was das Problem ist.
+  - beim kreuzen der Kurven
+  - Die eine Gruppe ist der anderen nicht konstant überlegen, wenn sich die Kurven kreuzen
+
+```{r}
+
+data_op_time %<>%
+  mutate(age = ifelse(age <= median(age), 0, 1))
+
+fit <- coxph(Surv(op_time, complication) ~ gender + age, data = data_op_time)
+fit %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+
+
+ggsurvplot(
+  fit = survfit(Surv(op_time, complication) ~ gender + age, data = data_op_time), 
+  xlab = "op time", 
+  ylab = "Overall Complication probability",
+  risk.table = TRUE,
+  pval = TRUE)
+  #break.time.by = 90,
+
+survdiff(Surv(op_time, complication) ~ gender + age, data = data_op_time)
+```
+
+##Aufgabe 4
+1. Interpretieren Sie den Effektschätzer aus der Cox PH!
+  - Interpretation wie das Odds Ratio
+2. Wie heißt der Effektschätzer und mit welchem anderen Effektschätzer ist er „verwandt“?
+  - hazard ratio
+  - verwandt mit dem Effetkschätzer des Chi Quadrat tests: odd ratio
+3. Nennen Sie alle drei ratios und ordnen Sie diese Ratios in den Kontext ein.
+  - hazard ratio: Relation von 2 Risiken
+  - risk ratio: krank : gesamt
+  - odds ratio: gesund : krank
+4. Rechnen Sie eine logistische Regression auf op_time! Warum hätten Sie das nicht tun sollen?
+  --> zensierungen werden unterschlagen bzw. ignoriert
+
+```{r}
+
+```
+

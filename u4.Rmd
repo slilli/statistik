@@ -1,0 +1,141 @@
+---
+title: "Übung 4"
+author: "Lilli Schuckert"
+date: "5 5 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, mice, naniar, finalfit, Amelia, Hmisc, missForest,
+               rcompanion, car, broom, plyr, lattice)
+
+data_dir <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2")
+easyfit_file <- file.path(data_dir, "easyFit.csv")
+
+#--Mischt fehlende Werte in die Daten--
+easyFit <- read_csv(easyfit_file) %>%
+  prodNA(noNA = 0.1)
+```
+
+## Aufgabe 1
+### a) Was ist der unterschied zwischen MAR, MCAR und MNAR?
+### b) Geben Sie ein Beispiel für alle 3 Arten der fehlenden Werte.
+MCAR: Missing completely at random
+• Rein zufällig fehlend
+• Fehlen ist weder von der eigentlichen Variablen noch von anderen Variablen abhängig
+• Können ignoriert werden
+Beispiel: Daten über Vermögen, Wohnort etc.
+
+MAR: Missing at random
+• Fehlen ist unabhängig von der Variable selbst, bei der der Wert fehlt
+• Fehlen ist abhängig von anderen Variablen im Datensatz
+• Bei Ignorieren wird das Ergebnis verzerrt, die Beziehungen zwischen den Parametern (z.B. in Regressionen) bleiben unverzerrt
+Beispiel: Frauen geben ihr Alter seltener an als Männer, ist unabhängig vom Alter der Frau.
+
+NMAR: Not missing at random
+• Fehlen hängt von der fehlenden Variable selbst ab
+• Fehlen hängt eventuell auch von anderen Variablen im Datensatz ab
+• Bei Ignorieren wird das Ergebnis und auch das Ergebnis für Beziehungen zwischen den Parametern verzerrt
+Beispiel: Ältere Frauen geben ihr Alter seltener an als jüngere Frauen und als Männer.
+
+### c) Warum ist die Entscheidung der Art des Fehlens von Bedeutung? Erklären Sie den Zusammenhang am starwars Datensatz.
+
+NMAR: birth_year
+MAR:  hair_color
+MCAR: mass
+
+--> ist von Bedeutung, weil bei NMAR zum Beispiel das Ergebnis für Beziehungen zwischen den Parametern (z.B. in Regressionen) bleiben unverzerrt
+
+```{r starwars}
+data(starwars)
+
+starwars_tbl <- starwars %>%
+  select_if(Negate(is.list)) %>%
+  mutate_if(is.character, as.factor)
+
+vis_miss(starwars_tbl)
+
+gg_miss_upset(starwars_tbl)
+
+starwars_tbl %>% ff_glimpse()
+```
+
+##Aufgabe 2
+
+calories noch rausnehmen -> probleme (?)
+```{r Endpunkt weight}
+
+# -- glm mit Endpunkt weight_bin ohne imputierte Werte--
+model <- glm(as.factor(weight_bin) ~ ., data = easyFit,
+    family = binomial(link = "logit"))
+
+model %>% summary
+model %>% tidy(exponenciate = TRUE)
+
+# --Fehlende Werte visualisieren und als Tabelle--
+easyFit_tbl <- easyFit %>%
+  select_if(Negate(is.list)) %>%
+  mutate_if(is.character, as.factor)
+
+vis_miss(easyFit_tbl)
+gg_miss_upset(easyFit_tbl)
+easyFit_tbl %>% ff_glimpse()
+
+# --glm mit Imputation der Werte--
+easyFit_imp_tbl <- read.csv("easyFit.csv") %>% 
+  select(-weight_cat) %>% 
+  select(-weight) %>% 
+  select(-city) %>% 
+  mutate_if(is.character, as.factor) %>%
+  filter(!(is.na(weight_bin) | is.na(easyFit)))
+
+vis_miss(easyFit_imp_tbl)
+glimpse(easyFit_imp_tbl)
+
+method_tbl <- tibble(var_id = names(easyFit_imp_tbl),
+                     meth = c("", "pmm", "logreg", "pmm", 
+                              "", "pmm", "pmm", "pmm",  "pmm", "pmm",
+                              "pmm", "logreg"))
+
+#stopped due incident rausnehmen
+
+easyFit_imp <- mice(easyFit_imp_tbl, m = 10, maxit = 5,
+                    meth = method_tbl$meth, seed = 500)
+
+#densityplot(easyFit_imp)
+
+mice::complete(easyFit_imp, 1) %>% head
+mice::complete(easyFit_imp, 2) %>% head
+mice::complete(easyFit_imp, 3) %>% head
+mice::complete(easyFit_imp, 4) %>% head
+mice::complete(easyFit_imp, 5) %>% head
+
+modelFit1 <- with(easyFit_imp, glm(weight_bin ~ age + gender + sport +
+                                     calories + height,
+                                   family = binomial))
+modelFit1
+mice::pool(modelFit1) %>% summary 
+```
+
+
+### e)Was sind die Unterschiede? Wie erkennen Sie die fehlenden Werte im glm?
+Bei der regression mit den Imputierten werten ist der standard error viel geringer.
+
+## Aufgabe 4
+### a) Was ist der Unterschied zwischen Hmisc::impute() und mice::mice()
+mice: nutzt Mittelwerte um Daten zu imputieren
+Hmisc: imputes missing values using user defined statistical methods. default is median
+
+### b) Erklären Sie an einen einfachen Beispiel was mean, median,random, min oder max in Hmisc::impute() macht.
+Man kann angeben, nach was die Daten imputiert werden sollen.
+Beispiel: with(easyFit_tbl, impute(age, mean)) --> imputiert nach mean
+
+### c) Wann würden Sie mice und wann Hmisc nutzen?
+Hmisc:
+ - bei Ausreißer Daten median statt mean
+
+bei haricolor nicht imputieren -> weil manchmal einfach nicht vorhanden
+
+meistens mice nehmen: nutzt regressionsmodelle anhand anderer variablen

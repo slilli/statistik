@@ -1,0 +1,249 @@
+---
+title: "Übung 3"
+author: "Lilli Schuckert"
+date: "28 4 2021"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = FALSE)
+pacman::p_load(tableone, table1, survival, tidyverse, janitor,
+               PerformanceAnalytics, ggpubr, magrittr, mvtnorm, plyr, simstudy,
+               broom, mosaic, PerformanceAnalytics, FSA, psych, car, rcompanion,
+               lmtest, olsrr, blorr, sjPlot)
+
+easyFit_tbl <- read_csv("easyFit_mod.csv")
+easyFit_tbl
+
+# easyFit_file <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2", "easyFit_mod.csv")
+# easy_tbl <- read_csv(easyFit_file)
+```
+
+## Aufgabe 1
+
+```{r MDS}
+
+#MDS nur für numerische werte und nur die x werte --> y rausnehmen
+## --1.1. Missing Data--
+CreateTableOne(data = easyFit_tbl) %>% summary
+
+## --1.2. MDS Plot--
+mds_tbl <- easyFit_tbl %>%
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2"))
+
+ggscatter(mds_tbl, x = "dim_1", y = "dim_2", 
+          # label = c(1:309),
+          label = rownames(easyFit_tbl),
+          size = 1,
+          repel = TRUE)
+
+##clean mds
+mds_clean_tbl <- easyFit_tbl %>%
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2")) %>%
+  mutate(id = easyFit_tbl$weight)
+
+wanted_ids_clean <- mds_clean_tbl %>%
+  filter(dim_2 > -100) %>% 
+  filter(dim_2 < 100) %>% 
+  pull(id)
+
+## --1.3.remove data--
+easyFit_clean_tbl <- easyFit_tbl %>%
+  filter(weight %in% wanted_ids_clean) 
+
+mds_clean_tbl <- easyFit_clean_tbl %>%
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2")) %>%
+  mutate(id = easyFit_clean_tbl$weight)
+
+ggscatter(mds_clean_tbl, x = "dim_1", y = "dim_2", 
+          size = 1,
+          repel = TRUE) 
+
+## --cleaned data frame--
+easyFit_clean_tbl <- easyFit_tbl %>%
+  filter(weight %in% wanted_ids_clean)
+  # na.omit
+
+mds_clean_tbl <- easyFit_clean_tbl %>%
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2")) %>%
+  mutate(id = easyFit_clean_tbl$weight)
+
+ggscatter(mds_clean_tbl, x = "dim_1", y = "dim_2", 
+          size = 1,
+          repel = TRUE) 
+
+
+## --numeric-----------------------------------------------------
+easyFit_num_tbl <- easyFit_tbl %>% 
+  select_if(is.numeric)
+
+mds_mod_tbl <- easyFit_num_tbl %>%
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2"))
+
+ggscatter(mds_mod_tbl, x = "dim_1", y = "dim_2", 
+          # label = easyFit_tbl$weight,
+          size = 1,
+          repel = TRUE)
+
+##clean mds
+mds_mod_clean_tbl <- easyFit_num_tbl %>%
+  dist() %>%          
+  cmdscale() %>%
+  as_tibble() %>%
+  set_names(c("dim_1", "dim_2")) %>%
+  mutate(id = easyFit_tbl$weight)
+
+wanted_ids_clean <- mds_mod_clean_tbl %>%
+  filter(dim_2 > -100) %>% 
+  filter(dim_2 < 100) %>% 
+  pull(id)
+
+
+#easyFit <- easyFit[-30, ]
+```
+
+## Aufgabe 2
+
+```{r Korrelation}
+## --2.1.Korrelationsplot--
+
+easyFit_num_tbl <- easyFit_clean_tbl %>% 
+  select_if(is.numeric)
+
+chart.Correlation(easyFit_num_tbl,
+                  method = "spearman",
+                  histogram = TRUE,
+                  pch = 16)
+
+## --2.2.VIF--
+dput(names(easyFit_num_tbl))
+str(easyFit_tbl)
+
+vif_easyFit_clean_tbl <- easyFit_clean_tbl %>% 
+  mutate(weight_bin = as.factor(weight_bin))
+
+## --olsrr package--
+olsrr_vif_model_null <- lm(weight ~ 1,
+                      data = vif_easyFit_clean_tbl)
+
+olsrr_vif_model_full <- lm(weight ~ age + gender + sport +
+                  easyFit + time_taken + 
+                  stopped_due_incident + calories + city + bloodpressure + height +
+                  creatinin + pet,
+                  data = vif_easyFit_clean_tbl)
+
+model <- olsrr::ols_vif_tol(olsrr_vif_model_full)
+model
+
+## --car package--
+car_vif_model_null <- glm(weight_bin ~ 1,
+                      data = vif_easyFit_clean_tbl,
+                      family = binomial(link = "logit"))
+
+car_vif_model_full <- glm(weight_bin ~ age + gender + sport +
+                  easyFit + time_taken + 
+                  stopped_due_incident + calories + city + bloodpressure + height +
+                  creatinin + pet,
+                  data = vif_easyFit_clean_tbl,
+                  family = binomial(link = "logit"))
+
+
+car_vif_model_full %>%  tidy(exponenciate = TRUE)
+car_vif <- car::vif(car_vif_model_full)
+car_vif
+
+```
+
+####2.2c)Unterschied car zu olsrr
+car: glm
+olsrr: lm --> df = 1
+
+As a rule of thumb, a vif score over 5 is a problem. A score over 10 should be remedied and you should consider dropping the problematic variable from the regression model or creating an index of all the closely related variables.
+
+Since categorical predictors have more than one degree of freedom (df), the confidence ellipsoid will have df dimensions, and GVIF will need to be adjusted so that it can be comparable across predictor variables. The adjustment is made using the following equation
+
+####2.3. Zusammenhang von Korrelation und VIF
+Multikollinearität ist ein Problem bei der Regressionsanalyse und liegt immer dann vor, wenn
+2 oder mehr erklärende Variablen eine sehr starke Korrelation miteinander haben.
+Je höher der VIF ist desto stärker ist der Hinweis auf Multikollinearität eines 
+Bestimmheitsmaßes. 
+Der VIF bezieht sich auf den Zusammenhang von einer Variable auf die anderen
+und für Korrelation betrachtet man immer mindestens 2 Größen.
+
+calories erstmal raus, weil über 5
+
+## Aufgabe 3
+
+```{r multiple gaussian linear regression weight}
+
+## --model_null und model_full--
+weight_model_null <- lm(weight ~ 1,
+                      data = vif_easyFit_clean_tbl)
+
+weight_model_full <- lm(weight ~ age + gender + sport +
+                  easyFit + time_taken + 
+                  stopped_due_incident + calories + city + bloodpressure + height +
+                  creatinin + pet,
+                  data = vif_easyFit_clean_tbl)
+
+weight_model_null %>% summary
+weight_model_full %>% summary
+
+
+```
+
+Modelldiagnostik:
+- Normalverteilung
+- mds
+- correlation
+- residuen plots
+- vif
+- bestimmtheitsmaße
+- interactionsplots
+- fehlende werte
+- correlationvis_miss
+
+## Aufgabe 4
+
+```{r multiple logistic linear regression weight_bin}
+
+## --model_null und model_full--
+weight_bin_model_null <- glm(weight_bin ~ 1,
+                      data = vif_easyFit_clean_tbl,
+                      family = binomial(link = "logit"))
+
+weight_bin_model_full <- glm(weight_bin ~ age + sport +
+                  easyFit +  bloodpressure + pet,
+                  data = vif_easyFit_clean_tbl,
+                  family = binomial(link = "logit"))
+
+weight_bin_model_null %>% summary
+weight_bin_model_full %>% summary
+weight_bin_model_full %>% tidy(exponenciate = TRUE, conf.int = TRUE)
+
+car_vif <- car::vif(weight_bin_model_full)
+## --Pseudo R^2--
+blr_model_fit_stats(weight_bin_model_full)
+
+## --check if regression is correct--
+blr_confusion_matrix(weight_bin_model_full)
+
+##hoher vif -> raus
+
+```
+

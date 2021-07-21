@@ -1,0 +1,177 @@
+---
+title: "Übungsblatt 11"
+author: "Charlotte Seehgaen"
+date: "6/23/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, magrittr, multcomp, effectsize,
+               parameters, car, readxl, broom, plyr,
+               gtsummary)
+```
+
+```{r data}
+#setwd("Documents/Uni/Statistik BW II")
+easyFitdata <- read_csv("easyFit.csv") %>% 
+  mutate_if(is.character, as.factor)
+```
+
+##Aufgabe 1
+
+#Erklären Sie den Begriff α-Inflation!
+-entsteht durch simultanes Testen mehrerer Hypothesen (innerhalb der selben 
+Studie)
+-jede Hypothese wird zum α von 5% getestet, d.h. jede Nullhypothese mit einer
+Wahrscheinlichkeit von 5% fälschlicherweise abgelehnt wird
+-dieser Fehler verstärkt sich je mehr Tests innerhalb einer Studie durchgeführt
+werden (ab 20 Tests ist mind. einer falsch)
+
+#Warum ist α-Inflation ein Problem in der Statistik?
+-wenn viele Tests gerechnet werden steigt die Wahrscheinlichkeit, dass einer 
+dieser Tests fälschlicherweise signifikant ist und dadurch die Nullhypothese 
+abgelehnt wird
+-viele Möglichkeiten Fehler zu korrigieren, jedoch weiß man nicht welche Methode
+am besten passt oder ob Korrektur erfolgreich war
+
+#Wie hängt α-Inflation mit dem p-Werten zusammen?
+-für Signifikanztest wird α mit p-Wert verglichen
+-α < p-Wert: Nullhypothese wird abgelehnt
+-bei steigender α-Inflation steigt die Wahrscheinlichkeit, dass bei eigentlich nicht-signifikanten Daten der p-Wert < α ist, deswegen Adjustierung notwendig
+
+#Rechnen Sie 500 simple logistische Regressionen in R in denen die Null-
+#Hypothese jeweils wahr ist. Wieviele signifikante p-Werte finden Sie?
+```{r Aufgabe 1}
+
+null_tbl <- tibble(a = rnorm(10, 5, 1),
+                   b = rnorm(10, 5, 1)) %>%
+  gather(trt, resp) %>%
+  mutate(trt = as.factor(trt))
+
+
+pvalue_vec <- laply(1:500, function(...) {
+  null_tbl <- tibble(a = rnorm(100, 0, 1),
+                     b = rnorm(100, 0, 1)) %>%
+    gather(trt, resp) %>%
+    mutate(trt = as.factor(trt))
+  p_value <- glm(trt ~ resp, null_tbl, family = binomial)  %>%
+    tidy %>%
+    pull(p.value)
+  return(p_value[2])
+})
+
+(pvalue_vec < 0.05) %>% sum
+
+```
+
+##Aufgabe 2
+
+#Rechnen Sie einen multiplen Kontrast Test auf den Daten.
+#Rechnen Sie dazu als erstes eine multiple Gaussian linear Regression mit 
+#Confounder-Adjustierung
+#Nutzen Sie einen passenden Kontrast.
+
+```{r Aufgabe 2}
+
+fit <- glm(weight ~ easyFit + age + gender + sport, data = easyFitdata,
+           family = gaussian) 
+fit %>% summary
+
+glht(fit, linfct = mcp(easyFit = "Tukey")) %>%
+  confint %>%
+  tidy() %>%
+  mutate(estimate = exp(estimate))
+
+contrMat(n = c("a" = 10, "b" = 10, "c" = 10, "d" = 10), type = "Tukey")
+ #Tukey alle Vergleiche
+ #Dunnett: nur Vergleiche zur Referenzgruppe 
+```
+
+#Was ist der Unterschied zwischen Adjustierung für Confounder und der 
+Adjustierung für multiples Testen?
+-Confounder: mehr erklärende Variablen ins Modell aufnehmen um Bias zu 
+kontrollieren
+
+-multiples Testen: α-Fehler-Kummulierung kontrollieren
+
+#Was sagen Ihnen die Konfidenzintervalle (confint()) im Bezug auf die Effekte?
+-Ausgabe adjustierte Effektschätzer und Konfidenzintervalle
+-Effektschätzer = Mittelwertsdifferenz, weil gaussian
+-mit Kontrasttests werden die Korrelationen zwischen den Teststatistiken 
+berücksichtigt
+-Ziel Kontrasttest: Gruppenvergleich (kein Schätzer für alle x)
+
+
+##Aufgabe 3
+
+#Rechnen Sie einen U-Test und einen t-Test
+```{r Aufgabe 3}
+data <- easyFitdata %>%
+  mutate(easyFit = ifelse(easyFit=="placebo", "placebo", "dose"))
+
+new_tbl <- data %>% 
+  arrange(weight) %>% 
+  mutate(rank = 1:309)
+
+new_tbl %>% 
+  group_by(easyFit) %>% 
+  dplyr::summarise(sum_rank = sum(rank))
+
+#Mann Whitney U Test: nichtparametrisch, unabhängige Stichproben, ungepaart, Gruppenvergleich zwischen verschiedenen treatments
+#Wilcoxen Test: nichtparametrisch, abhängige Stichproben, gepaart, Gruppenvergleich vorher/nachher
+
+#Mann Whitney U-Test
+wilcox.test(weight ~ easyFit, data = filter(easyFitdata, easyFit %in% c("placebo","dose25")))
+
+#T-Test
+t.test(weight ~ easyFit, data = filter(easyFitdata, easyFit %in% c("placebo","dose25")))
+
+
+```
+
+#Wählen Sie dafür die passenden Endpunkte. Was müssen Sie noch beachten?
+-Normalverteilung (T-Test)
+-unabhängige Stichproben (beide)
+
+#Was sind die Unterschiede zwischen einem U-Test und einem t-Test im Bezug auf 
+die Effektschätzer?
+-T-Test: Mittelwertdifferenzen
+-U-Test: keinen Effektschätzer und keine Konfienzintervalle 
+
+#Welchen Effektschätzer bevorzugen Sie?
+-Effektschätzer des T-Tests
+
+
+##Aufgabe 4
+
+#Was ist die minimale Anzahl an Beobachtungen pro Gruppe in der Nicht-
+#Parametrik? Warum ist das so?
+-nicht zu wenige Samples, weil nichtparametrischer Test sonst kein
+repräsentatives Ergebnis liefert (viel zu hoher p-Wert, vermutlich kann
+Nullhypothese nicht abgelehnt werden)
+->=5?
+
+#Was sind Bindungen?
+-bei Umwandlung in Ränge: Werte die mehrfach vorkommen sind gebunden
+
+#Was ist der Unterschied zwischen einem Kruskal-Wallis Test und einer ANOVA?
+-Kruskal-Wallis ist nichtparametrisch, nur einfaktorieller Test möglich
+-ANOVA ist parametrisch, ein- und mehrfaktoriell sowie ANCOVA
+
+#Wenn Sie einen Gruppenvergleich durchführen auf was müssen Sie bei der 
+#Adjustierung der p-Werte achten?
+-beide Test geben bei mehrehren Gruppen nur aus, ob es zwei Gruppen mit einem 
+signifikanten Mittelwertsunterschied gibt
+-vergleicht man anschließen die beiden Gruppen miteinander muss man 
+berücksichtigen, dass damit mehrere Test durchgeführt werden, deswegen sollte
+eine Adjustierung stattfinden
+
+#Erklären Sie in diesem Zusammenhang Bonferroni!
+-Bonferroni: Signifikanzniveau α wird zu α/Testanzahl korrigiert oder α wird mit min(p-Wert*Testanzahl,1) verglichen
+-kann für Korrektur der p-Werte bei mehrehren Gruppenvergleichen verwendet 
+werden, um Fehler zu kontrollieren
+
+
+
+

@@ -1,0 +1,173 @@
+---
+title: "Übung 4 - Missing Values"
+author: "leonard"
+date: "7 5 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, mice, naniar, finalfit, Amelia,
+               Hmisc, missForest, rcompanion, car, broom,
+               plyr)
+
+#Workingdirectory woanders
+easyFit_file <- file.path("D:/Dokumente/UNI/BioInformatik/Statistik II/Statistik II SoSe21", "easyFit.csv")
+
+miss_easyFit_tbl <- read_csv(easyFit_file) %>%
+  prodNA(noNA = 0.1) %>% 
+  mutate_if(is.character, as.factor) %>% 
+  select(-weight, -weight_cat, -calories, -stopped_due_incident)
+```
+##Unterschied MAR, MCAR, MNAR
+
+####MCAR : Missing completly at random
+- rein zufällig fehlende Werte, von keinen anderen Variablen abhängig, gut gestreut über Datensatz
+- können ignoriert werden
+Bsp: einzelne Daten wurden beim erfassen vergessen / übersehen
+
+
+####MAR : Missing at random
+- Fehlen ist unabhängig von der Variable selbst, bei der der Wert fehlt
+- Fehlen ist mit dem Fehlen anderer Daten in Verbindung zu bringen ?
+- Fehlen der Daten ist in Bezieung zu existierenden Daten, aber nicht der fehlenden
+- Verzerrt Ergebnis, Beziehung zu anderen Parametern wie z.B. bei Regressionen bleiben erhalten (unverzerrt)
+Bsp: Frauen geben Ihr Alter seltener an als Männer, ist unabhängig vom Alter der Frau
+ -> wenn frauen ab gewicht 70kg nicht angeben, dann NMAR
+
+####NMAR : Not missing at random
+- Fehlen hängt von der fehlenden Variable selbst und eventuell von dem Fehlen anderer Variablen ab
+- Verzert Ergebnis und Beziehungen der Variablen (Regressionen)
+Bsp: mehrere Reihen von Daten und Variablen wurden zensiert, zB. ab einem Grenzwert -> Zensur der ganzen Reihe
+Bsp: die krankesten Patienten des Datensatzes werden gelöscht
+
+##Entscheidung der Art des Fehlens ist wichtig
+Beim StarWars Datensatz ist es wichtig zu wissen, ob die fehlenden Werte auf ein Muster zurückzuführen sind, da es aufschluss über die Analyse und die Einbezieung der Daten gibt. 
+Es wäre z.B. nicht sinnvoll die Haarfarbe von einem Subset mit vielen Droiden zu vergleichen, da die Haarfarben Daten nicht at Random fehlen, sondern weil Droiden keine Haare haben.
+
+```{r Aufgabe 2}
+## https://cran.r-project.org/web/packages/naniar/vignettes/naniar-visualisation.html
+
+##https://datascienceplus.com/imputing-missing-data-with-r-mice-package/
+
+#Visualisieren der fehlenden Daten
+vis_miss(miss_easyFit_tbl)
+
+# how many missings?
+gg_miss_var(miss_easyFit_tbl)
+
+gg_miss_upset(miss_easyFit_tbl,
+              nsets = 10)
+
+#fehlende Werte in Tabelle darstellen
+ff_glimpse(miss_easyFit_tbl)
+
+#Regression OHNE Imputation der Werte
+
+miss_modell <- glm(weight_bin~ sport + age + easyFit + pet,
+                   data = miss_easyFit_tbl,
+                   family = binomial(link = "logit"))
+miss_modell %>% summary
+
+##Regression MIT Imputation der Werte
+method_tbl <- tibble(var_id = names(miss_easyFit_tbl),
+                     meth = c("", "pmm","logreg", "pmm","polyreg", "pmm","polyreg","pmm", "pmm","pmm", "logreg"))
+#stopped due incident -> unzureichend Daten
+
+easyFit_imp <- mice(miss_easyFit_tbl, m = 5, maxit = 10,
+                    meth = method_tbl$meth, seed = 500)
+
+mice::complete(easyFit_imp, 1) %>% head
+mice::complete(easyFit_imp, 2) %>% head
+mice::complete(easyFit_imp, 3) %>% head
+mice::complete(easyFit_imp, 4) %>% head
+mice::complete(easyFit_imp, 5) %>% head
+
+
+
+densityplot(easyFit_imp)
+#blaue Kurve - echte Daten
+#rote Kurven - Imputierte Daten ( m =5 also 5 rote Linien)
+
+
+imp_modell <- with(easyFit_imp, glm(weight_bin ~sport + age + easyFit + pet,
+                   family = binomial(link = "logit")))
+mice::pool(imp_modell) %>% summary
+
+
+```
+```{r Aufgabe 3} 
+#Endpunkt weight
+
+#daten auf lm vorbereiten
+lm_easyFit_miss_tbl <-read_csv(easyFit_file) %>%
+  prodNA(noNA = 0.1) %>% 
+  mutate_if(is.character, as.factor) %>% 
+  select( -weight_bin, -weight_cat, -calories, -stopped_due_incident) %>% 
+  as_tibble
+
+#missing Modell
+miss_lm <- lm(weight ~sport + age + easyFit + pet, 
+             data = lm_easyFit_miss_tbl)
+
+miss_lm %>% summary
+
+#Imputation Modell
+lm_method_tbl <- tibble(var_id = names(lm_easyFit_miss_tbl),
+                     meth = c("pmm", "pmm","logreg", "pmm","polyreg", "pmm","polyreg","pmm", "pmm","pmm", "logreg"))
+
+lm_easyFit_imp <- mice(lm_easyFit_miss_tbl, m = 5, maxit = 10,
+                    meth = lm_method_tbl$meth, seed = 500)
+
+densityplot(lm_easyFit_imp)
+
+lm_imp_modell <- with(lm_easyFit_imp, lm(weight ~sport + age + easyFit + pet))
+
+mice::pool(imp_modell) %>% summary
+
+# SD geht runter,estimate/intercept geht runter 
+
+# OHNE mice::pool()
+
+mice_data_lst <- llply(1:lm_easyFit_imp$m, function(i) {
+  tmp_tbl <- mice::complete(lm_easyFit_imp, i) %>%
+    as_tibble()
+  r <- lm(weight ~ sport + age + easyFit + pet,
+          data = tmp_tbl) %>% tidy %>%
+             filter(term != "(Intercept)")
+  return(r)  
+}, .progress = "text")
+mice_data_lst
+
+# llply verwalte einzelne Datensätze
+# Reduce("+", .) addiert alle Werte der einzelnen lm aufeinander
+
+reduced_df <- mice_data_lst %>%
+  llply(select_if, is.numeric) %>%
+  Reduce("+", .) / lm_easyFit_imp$m 
+
+reduced_df %>% as_tibble %>%
+  select(estimate, std.error) %>%
+  mutate(p_wert = estimate / std.error)
+
+
+```
+##Aufgabe 4 
+
+wann Hmisc::impute ?
+ - basierend auf Verteilungen ( mean, median, random, min, max) 
+ - wenn man kein Bock auf Imputationsmethoden hat, nimmt man vorgefertigte Verteilungen 
+ - z.B. Abschätzen ob es Ausreißer gibt, dann Median nehmen um die 
+ - z.B. Random zieht einfach zufällig einen Wert aus den Daten heraus
+ 
+mice::mice 
+ - in den meisten Fällen angebracht
+ - bildet Prädiktionsmodelle anhand der existierenden Variablen mittels Regressionen
+
+
+
+
+
+
+

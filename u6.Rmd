@@ -1,0 +1,236 @@
+---
+title: "Übung 6"
+author: "Lilli Schuckert"
+date: "19 5 2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, broom, dplyr, cutpointr, fs, janitor)
+
+data_dir <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 1")
+migraine_file <- file.path(data_dir, "LilliSchuckert.csv")
+
+data <- read.csv(migraine_file)
+data
+
+data1 <- read.csv(migraine_file)
+
+data_gaussian <- read_csv(migraine_file) %>%
+  clean_names %>% 
+  mutate_if(is.character, as.factor) 
+
+data_logistic <- read_csv(migraine_file) %>%
+  clean_names %>% 
+  mutate_if(is.character, as.factor)
+
+```
+
+## Forschungsfrage:
+  Gibt es einen Zusammenhang zwischen einer Akupunkturbehandlung und Migräneschmerzen?
+
+```{r EDA}
+
+## ----- Age -----
+summary(data$age)
+ggplot(data, aes(age)) +
+  geom_histogram(aes(fill = sex), binwidth = 1, color = "black", position = "dodge")+
+  labs(title = "Altersverteilung")+
+  theme_bw()
+
+## ----- Sex -----
+table(data$sex)
+ggplot(data, aes(x=sex, y = stat(count), group_by(group), fill = group))+
+  geom_bar(position = "dodge", color = "black")+
+  theme_bw()+
+  labs(title = "Geschlechterverteilung in group")
+
+## ----- Chronicity -----
+summary(data$chronicity)
+ggplot(data, aes(x=sex, y =chronicity))+
+  geom_boxplot(aes(fill = sex)) +
+  labs(title = "Chronicity", subtitle = "man and woman")+
+  theme_bw()
+
+ggplot(data, aes(x=group, y =chronicity))+
+  geom_boxplot(aes(fill = group)) +
+  labs(title = "Chronicity in group", subtitle = "accupuncture and control")+
+  theme_bw()
+  
+## ----- Migraine Score in Accupuncture and Control Group  -----
+summary(data$migraine_score)
+
+## Accupuncture Group: 
+data_migraine_score_accu <- filter(data, group == "accupuncture")
+data_accupuncture <- data_migraine_score_accu %>% 
+  select(migraine_score, group)
+summary(data_accupuncture)
+
+cat("Mean age in Accupuncture group:", mean(data_migraine_score_accu$age), "\n")
+cat("Mean chronicity in Accupuncture group:", mean(data_migraine_score_accu$chronicity), "\n")
+table(data_migraine_score_accu$sex)
+cat("Gender distribution in %: ", "\n", "male:", round(100/37*35, digits=2), "%",
+    "\n", "female:", round(100/37*2, digits = 2), "%")
+
+## Control Group:
+data_migraine_score_cont <- filter(data, group == "control")
+data_control <- data_migraine_score_cont %>% 
+  select(migraine_score, group)
+summary(data_control)
+
+cat("Mean age in Control group:", mean(data_migraine_score_cont$age), "\n")
+cat("Mean chronicity in Control group:", mean(data_migraine_score_cont$chronicity), "\n")
+table(data_migraine_score_cont$sex)
+cat("Gender distribution in %: ", "\n", "male:", round(100/54*51, digits=2), "%",
+    "\n", "female:", round(100/54*3, digits = 2), "%")
+
+## ----- Migraine_score visualization -----
+ggplot(data, aes(migraine_score)) +
+  geom_histogram(aes(fill = group), binwidth = 1, color = "black", position = "dodge")+
+  labs("Migraine Score", subtitle = "Accupuncture and Control Group")+
+  theme_bw()
+
+ggplot(data = data, aes(x = group, y = migraine_score, fill = group))+
+  geom_boxplot(alpha = 0.5) +
+  labs(title = "Migraine Score", subtitle = "Accupuncture and Control Group") +
+  theme_bw()
+
+ggplot(data = data, aes(x=migraine_score, fill=group)) +
+  geom_histogram(aes(y=..density..), colour="black", fill="white")+
+  geom_density(alpha = 0.2)+
+  labs(title = "Migraine Score", subtitle = "Accupuncture and Control Group") +
+  theme_bw()
+
+```
+
+                 
+## Statistische Hypothesen:
+  H0: Es gibt keinen Zusammenhang zwischen dem Migränescore und einer Akkupunkturbehandlung
+  H1: Es gibt einen Zusammenhang zwischen dem Migränescore und einer Akkupunkturbehandlung
+
+## Aufgabe 1
+  Rechnen und präsentieren Sie Ihre Prüfung Statistik für Biowissenschaften I
+  und Daten mit der Methode„t-Test“.
+
+```{r t-test}
+
+summary(data$group)
+
+mosaic::var(migraine_score ~ group, data = data)
+t.test(migraine_score ~ group, data = data)
+t.test(migraine_score ~ group, data = data, var.equal = TRUE)
+
+##t-Wert: signifikant
+##p-Wert < 0.05 --> wir kÃ¶nnen Nullhypothese ablehnen
+##Effektschätzer beim t-test Mittelwertsunterschied 
+
+effektschätzer = 24.62 - 17.96
+effektschätzer
+
+# 0 ist nicht im Intervall --> H0 ablehnen
+```
+
+## Aufgabe 2
+  Rechnen und präsentieren Sie Ihre Prüfung Statistik für Biowissenschaften I
+  und Daten mit der Methode„Chi-Quadrat-Test“.
+
+```{r chi square test}
+
+##Dichotomisierung von migraine_score in binäre Variablen mit
+##  cutpointr(data, migraine_score, group) --> >=21
+data1$migraine_score <- ifelse(data1$migraine_score >=21,1,0)
+data1$group[data1$group == "accupuncture"]  <- 1
+data1$group[data1$group == "control"]  <- 0
+view(data1)
+
+## 2x2 Tafel migraine_score ~ group
+migraineXgroup <- xtabs(~migraine_score + group, data1)[2:1,2:1]
+migraineXgroup
+## --> group 1 und migraine_score 0 enthält 0 Probanden
+## --> mathematisch genaue Berechnung des Chi-Quadrattests nicht möglich
+## --> hier: Fisher-Test
+
+## Manipulated 2x2 Tafel migraine_score ~ group
+migraineXgroupXmanipulated <- matrix(c(32, 5, 6, 48), nrow = 2, byrow = FALSE)
+rownames(migraineXgroupXmanipulated) <- c("1", "0")
+colnames(migraineXgroupXmanipulated) <- c("1", "0")
+migraineXgroupXmanipulated
+
+## Chi-Quadrat-Test 
+chisq.test(migraineXgroupXmanipulated , correct = FALSE)
+##    --> df = (2-1)*(2-1) = 1
+##    --> reject H0: p-value = 1.801*10^-5 < alpha = 0,05
+
+##-----------------------------------------------------------------------------
+##Konfidenzintervalle
+xlaccu <- mean(data_accupuncture$migraine_score) - 1.96*(sd(data_accupuncture$migraine_score)/sqrt(37))
+xraccu <- mean(data_accupuncture$migraine_score) + 1.96*(sd(data_accupuncture$migraine_score)/sqrt(37))
+
+xlcon <- mean(data_control$migraine_score) - 1.96*(sd(data_control$migraine_score)/sqrt(54))
+xrcon <- mean(data_control$migraine_score) + 1.96*(sd(data_control$migraine_score)/sqrt(54))
+
+cat("KI Accupuncture:[", xlaccu, " ; ", xraccu, "]", "\n","KI Control:[", xlcon, " ; ", xrcon, "]")
+## --> zu 95%iger Wahrscheinlichkeit liegt der wahre Mittelwert der Grundgesamtheit in dem KI
+
+##-----------------------------------------------------------------------------
+##Effektschätzer
+OR <- function(a, b, c, d)
+{
+  return ((a*d)/(c*b))
+}
+cat("OR: ", OR(32, 6, 5, 48))
+## --> OR:  51.2 --> "Risiko" : Akkupunktur erhöht das Risiko für einen höheren Migraine Score um das 51.2 fache.
+
+```
+
+
+##Aufgabe 3
+  Rechnen und präsentieren Sie Ihre Prüfung Statistik für Biowissenschaften I
+  und Daten mit der Methode „Gaussian linear regression“
+
+```{r gaussian linear regression}
+
+gauss_lin_reg <- lm(migraine_score ~ group, data = data_gaussian, family = gaussian) 
+gauss_lin_reg %>% tidy(conf.int = TRUE)
+gauss_lin_reg %>% summary
+
+##p-Wert --> signifikant --> Ho ablehnen
+## R-squared = 0.51 --> die Varianz von der abhÃ¤ngigen Variable (migraine_score) wird zu 51% von der erklÃ¤renden Variable (group) erklÃ¤rt
+
+##zu 95% ist der Mittelwert der Grundgesamtheit zwischen 23.2 und 24.84
+
+```
+
+
+## Aufgabe 4
+  Rechnen und präsentieren Sie Ihre Prüfung Statistik für Biowissenschaften I 
+  und Daten mit der Methode „Logistic linear regression“
+
+```{r logistic linear regression}
+
+## cutpointr(data_logistic, migraine_score, group) --> >=21
+data_logistic$migraine_score <- ifelse(data_logistic$migraine_score >=21,1,0)
+data1$group[data_logistic$group == "accupuncture"]  <- 1
+data1$group[data_logistic$group == "control"]  <- 0
+
+mosaicplot(migraine_score ~ group, data = data_logistic)
+
+log_lin_reg <- glm(migraine_score ~ group, data = data_logistic,
+                   family = binomial) %>%
+  tidy(exponenciate = TRUE)
+
+log_lin_reg %>% summary()
+log_lin_reg
+
+## p-Wert --> signifikant --> Ho ablehnen
+## ist 1 enthalten oder nicht
+#effektschätzer
+##kleiner 1 --> protektiv
+#größer 1 --> risiko
+
+```
+

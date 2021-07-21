@@ -1,0 +1,199 @@
+---
+title: "Übung 7"
+author: "Leonard"
+date: "26 5 2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+pacman::p_load(pscl, haven, MASS, nnet, dplyr,
+               janitor, tidyverse, broom, ordinal)
+
+easyFit_file <- file.path("D:/Dokumente/UNI/BioInformatik/Statistik II/Statistik II SoSe21", "easyFit.csv")
+easyFit_tbl <- read_csv(easyFit_file) %>% select(-stopped_due_incident, -calories, -weight_bin, -weight)
+
+poisEasyFit_tbl <-read_csv(easyFit_file) %>% select(-stopped_due_incident, -calories, -weight_bin, -weight_cat)
+```
+
+
+# Aufgabe 1 
+## ordinale Regression auf easyFit
+
+```{r Aufgabe 1}
+ologit_fit <- polr(as.factor(weight_cat) ~ age+gender+easyFit+bloodpressure, data =easyFit_tbl)
+
+## as.factor faktorisiert alphanumerisch ! Statdessen:
+## factor(easyFit_tbl$weight_cat, levels=c("low", "mid", "high"), ordered=TRUE) )
+
+ologit_fit %>% summary
+
+
+ologit_fit %>% confint %>% exp
+
+coef_df <- summary(ologit_fit) %>% coef   #coefficiant dataframe
+
+p_n <- pnorm(abs(coef_df[, "t value"]), lower.tail = FALSE) * 2
+## pnorm berechnet Fläche unter der Normalverteilung, rechts vom t-Wert. *2 für beide Seiten der Glockenkurve
+
+p_t <- pt(abs(coef_df[, "t value"]), df = 3, lower.tail = FALSE) * 2
+## berechnet p-wert der T-Verteilung, Freiheitsgrade müssen mit angegeben werden
+
+
+cbind(coef_df,
+      p_n = round(p_n, 3),
+      p_t = round(p_t, 3))
+
+ologit_fit %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+## TAKEAWAY RISK RATIO
+
+```
+## Zur VL ordinale logistische Regression
+
+- y ist geordnet in absteigende factorielle Einheiten (gut mittel schlecht)
+- y muss zur Fragestellung passen
+- berechnet eine ODDS RATIO (3:4) / RISK RATIO(4/7)
+- Effektschätzer müssen exponiert werden, da mit Logit-Link Funktion gerechnet wird
+- es werden nur Coefficents, StandartError und T-Wert berechnet
+- polr gitb KEINE P-werte aus, müssen selber gerechnet werden: 
+  z.B. indem der t-Wert gegen die Standartnormalverteilung verglichen wird, wie ein     z-Test. Das Klappt aber nur, wenn die Sample Size groß genug ist (je größer desto besser).
+  Problem, wenn nicht auf der Normalverteilung der p-Wert gerechnet wird, sondern zB auf    der T-Verteilung, dann ist der p-Wert direkt von der Wahl der Freiheitsgrade abhängig...
+- Effektschätzer sind schwer zu interpretieren, da verschieden Wege existieren, trotzdem:
+- die beiden oberen y ordinalen Vars werden gegen die geringste (0er) verglichen.
+
+- in log Reg ist <1 protektiv
+```{r AUfgabe 2}
+# multinominale Regression
+
+multinom_tbl <- select( filter(easyFit_tbl, city == 'Berlin' | city == 'Hamburg' | city=="Salzburg"), c('weight_cat', 'age', 'gender', 'sport', 'city', 'time_taken', 'bloodpressure', 'height', 'creatinin', 'pet' )) %>% mutate_if(is.character, as.factor)
+## besser da höhere Fallzahl die Gruppen: Berlin, Hamburg , alle anderen
+
+
+multinom_tbl$city2 <- relevel(multinom_tbl$city, ref = "Berlin")
+
+multinom_fit <- multinom(city2 ~ age + sport + time_taken, data = multinom_tbl)
+
+multinom_fit %>% summary
+
+multinom_fit %>% confint %>%  exp
+
+## T -werte berechnen
+z_mat <- summary(multinom_fit)$coefficients/summary(multinom_fit)$standard.errors
+
+p_n <- (1 - pnorm(abs(z_mat), 0, 1)) * 2
+## p-Werte aus Standartnormalverteilung berechnen
+
+multinom_fit %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+## Interpretation als Risk Ratio -> eine Person die 1 jahr älter ist hat ein 1,066 höheres Risiko
+
+## P-Wert kann auch von tidy berechnet werden
+## TAKEAWAY RISK RATIO
+
+```
+## zur VL multinominale Regression
+
+y hat noch nicht mal eine Ordnung, wie z.B. Berlin, Hamburg, Salzburg
+- multinom von Paket nnet ist zu empfehlen, da es keine Datenumstrukturierung brauch
+- Was ist die Baseline? (was ist die 0?) muss mit relevel gewählt werden, bei Städten schwierig..
+- auch hier muss der p-Wert händisch berechnet werden, zuerst den t-Wert indem coefficient/standartError gerechnet wird. Anschließend den p-Wert mit pnorm.
+
+```{r Aufgabe 3}
+##  einzelne logistische Regressionen
+
+
+ologit_tbl <- multinom_tbl
+
+ologit_1 <- oligot_tbl %>% filter(city %in% c("Berlin", "Hamburg"))
+
+ologit_2 <- oligot_tbl %>% filter(city %in% c("Berlin", "Salzburg"))
+
+ologit_3 <- oligot_tbl %>% filter(city %in% c("Hamburg", "Salzburg"))
+
+
+## drei einzelne Regressionen rechnen
+
+log_fit_01 <- glm(city ~ age + sport + time_taken, data = ologit_1,
+                  family = binomial)
+log_fit_02 <- glm(city ~ age + sport + time_taken, data = ologit_2,
+                  family = binomial)
+log_fit_12 <- glm(city ~ age + sport + time_taken, data = ologit_3,
+                  family = binomial)
+
+log_fit_01 %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+log_fit_02 %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+log_fit_12 %>% tidy(conf.int = TRUE, exponentiate = TRUE)
+```
+
+
+## zur VL seperate logistische Regressionen
+
+Aufsplitten der multinonminalen Regression in einzelne logistische Regressionen, die jeweils die drei möglichen y miteinander vergleichen.
+
+- ACHTUNG die Fallzahlen können ungleich verteilt und zu klein werden beim aufspalten. Je mehr Fallzahlen man hat, desto wahrscheinlicher ist es, einen wahren Effekt zu bekommen
+- aufteilung der Daten führt zu geringerer Power und damit dazu, dass signifikanzen verschwinden
+- es müssten auch die p-werte adjustiert werden. Stichwort Multiples Testen
+
+
+```{r Aufgabe 4}
+# Rechnen Sie eine Poisson Regression auf dem Datensatz. Im Zweifel transformieren Sie eine Variable in
+# der Form, dass eine Poisson Regression möglich ist
+
+summary(poisEasyFit_tbl$time_taken)
+ggplot(poisEasyFit_tbl, aes(time_taken)) +
+  geom_histogram(aes(fill = time_taken), binwidth = 3, color = "white", )+
+  labs(title = "Timetaken Verteilung")+
+  theme_bw()
+# nicht normalverteilt, eher poisson verteilt
+# Annahme: time taken ist Anzahl der Stunden (count), die ein Patient irgendwas gemacht hat
+
+## korrekt
+
+poisson_fit <- glm(time_taken ~ sport + weight + age + city, data = poisEasyFit_tbl, 
+                   family = poisson)
+poisson_fit %>% summary 
+
+# 3973.9 / 300 = 13.24633 -> 13 mal höhere Varianz als modellannahme
+
+
+quasipoisson_fit <- glm(time_taken ~ sport + weight + age + city, data = poisEasyFit_tbl, 
+                   family = quasipoisson)
+quasipoisson_fit %>% summary
+quasipoisson_fit %>% tidy(conf.int = TRUE, exponentiate=TRUE)
+# Dispersion parameter for quasipoisson family taken to be 13.19694
+
+#Effektschätzer
+# Wenn der Patient ein Jahr älter ist, steigt die time_taken Zahl um 0.9989 an. 
+# ein Patient von 43 Jahren also 53*43*0.9989872 = 2276.692
+# Patien: 53Jahre, 42,699 weight 123.3 sport 54 time taken Berlin
+# 53.72*53*0.995 + 42,699*1.004 + 123.3*0.998 + 
+
+## schlechtes Modell, desshalb so ein Ergebnis
+
+```
+## zur VL Poisson Regression
+
+Zero-Inflation und Overdispersion muss man angucken beim interpretieren!
+
+Um den Dispersionparameter zu kontrollieren gibt es die einfache Überschlagsrechnung:
+in der summary der glm : residual deviance / residual degrees of freedom == Dispersion parameter
+
+Wenn der gerechnete Wert nicht dem Dispersionsparameter entspricht, dann ist die Varianz um x mal größer, als die Modellannahme berechnet. (x<0) 
+ -> Folge : super signifikanzen, OVERDISPERSION
+ 
+1. QuasiPoisson, Varianz getrennt vom Mittelwert betrachten
+2. Oder mit negativ-binomialverteilung rechnen
+
+Effektschätzer:
+
+Poisson Regression liefert Raten, summary muss exponiert werden.
+Zu seinem Beispiel: Intercept =10, group = 1.5 ->  10*1.5 = Wie Viel y, Sprich 1.5 MAL MEHR als in intercept
+
+# Aufgabe 4 
+## 2. Was ist Overdispersion?
+
+Ist ein Phänomen was häufig bei der Modellierung von Zähldaten auftritt. Die tatsächlich gemessene Variation (empirische Varianz) in den Daten übersteigt also die theoretisch erwartete Variation (theoretische Varianz).
+In der Poisson Regression ist dies die häufigste Verletzung der Modellannahme. Die Modellannahme lautet: Die Varianz muss dem Erwartungswert entsprechen.
+ -> Folge : Zähldaten streuen in einem größeren Maße um den Erwartungswert als durch das Poissonn-Modell erwartet wird.
+
+
+

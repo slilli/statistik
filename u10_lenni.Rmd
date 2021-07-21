@@ -1,0 +1,164 @@
+---
+title: "Übung 10"
+author: "Leonard"
+date: "17 6 2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, magrittr, multcomp, effectsize,
+               parameters, car, readxl, dplyr, ggpubr,rstatix,emmeans)
+
+easyFit_file <- file.path("D:/Dokumente/UNI/BioInformatik/Statistik II/Statistik II SoSe21", "easyFit.csv")
+easyFit_data <- read_csv(easyFit_file)
+
+```
+
+```{r, Aufgabe 1}
+
+easyFit_anv <- easyFit_data %>% dplyr::select(weight, easyFit) %>% na.omit %>% mutate(easyFit = as.factor(easyFit))
+
+# 1. Einfaktorielle ANOVA
+ggplot(easyFit_anv, aes(x = easyFit, y = weight, fill = easyFit)) +
+  geom_boxplot()
+
+
+fit_one <- lm(weight ~ easyFit, data = easyFit_anv) 
+
+fit_one %>% summary
+fit_one %>% anova
+
+# 2. Visualisation
+
+#Welch One way ANOVA test
+fit_test <- easyFit_anv %>% welch_anova_test(weight ~ easyFit)
+# Pairwise comparisons (Games-Howell)
+pwc2 <- easyFit_anv %>% games_howell_test(weight ~ easyFit)
+# Visualization: box plots with p-values
+pwc2 <- pwc2 %>% add_xy_position(x = "easyFit", step.increase = 1)
+ggboxplot(easyFit_anv, x = "easyFit", y = "weight") +
+  stat_pvalue_manual(pwc2, hide.ns = TRUE) +
+  labs(
+    subtitle = get_test_label(fit_test, detailed = TRUE),
+    caption = get_pwc_label(pwc2)
+    )
+
+# 3. Unterschied zweilevel Factor zu dreilevel Factor?
+# 
+
+# 4. Effektschätzer bestimmen mit effectsize
+
+effectsize::eta_squared(fit_one, partial = FALSE)
+
+# 5. Was sagt der Effektschätzer aus ?
+#  eta_squared ist wie ein R^2, es berichtet die erklärte Varianz
+```
+
+
+
+## Zur Aufgabe 1
+
+- ANOVA rechnet man auf lm, da lm nach SumofSquares (SS) optimiert (darauf basiert)
+- lm summary gibt im x~y Fall schon die ANOVA, da diese auf SS basierend den Effekt anzeigt
+- wird in lm F-Statistic genannt, beinhaltet p-Value, SD, df 
+- ANOVA ist redundant und gibt keinen Effektschätzer
+
+### Package Eta2 für Effektschätze
+
+- eta_squared = R^2
+-Cohensd / cohens_f = Z-Test
+
+
+```{r, Aufgabe 2}
+# 1. Zweifaktorielle ANOVA
+easyFit_anv2 <- easyFit_data %>% dplyr::select(weight, easyFit, gender) %>% na.omit %>%
+  mutate(easyFit = as.factor(easyFit)) %>% 
+  mutate(gender = as.factor(gender))
+
+# Visualisierung
+bxp <-ggplot(easyFit_anv2, aes(x = gender, y = weight, fill = easyFit)) +
+  geom_boxplot()
+bxp
+
+fit_two <- lm(weight ~ easyFit + gender, data = easyFit_anv2)
+
+fit_two %>% summary
+fit_two %>% anova
+  
+
+# 2.Visualization: box plots with p-values
+res.aov <- easyFit_anv2 %>% anova_test(weight~easyFit + gender)
+
+# pairwise comparisons
+pwc <- easyFit_anv2 %>% 
+  group_by(easyFit) %>%
+  emmeans_test(weight ~ gender, p.adjust.method = "bonferroni")
+pwc <- pwc %>% add_xy_position(x = "gender")
+bxp +
+  stat_pvalue_manual(pwc) +
+  labs(
+    subtitle = get_test_label(res.aov, detailed = TRUE),
+    caption = get_pwc_label(pwc)
+    )
+
+# 4. Effektschätzer
+
+effectsize::eta_squared(fit_two, partial = FALSE)
+
+```
+## Zur Aufgabe 2
+
+
+
+
+
+
+```{r, Aufgabe 3}
+### ANCOVA (https://www.datanovia.com/en/lessons/ancova-in-r/)
+
+
+
+```
+## zur Aufgabe 3
+ANCOVA ist eine Confounder Adjustierung.
+
+"The Analysis of Covariance (ANCOVA) is used to compare means of an outcome variable between two or more groups taking into account (or to correct for) variability of other variables, called covariates. In other words, ANCOVA allows to compare the adjusted means of two or more independent groups."
+
+-> y ~ factor + kontinuierlich
+
+
+## zur Aufgabe 4
+
+1. Unter welchen Bedingungen ist t-test, anova und glm gleich?
+
+auf den gleichen Daten:
+  t.test (Mittelwertsvergleich), one-way-ANOVA mit zweilevel Faktor, und der lm regression(Mittelwertsvergleich mit einer Gerade durch; Differenz der Gruppen-means liefert den Intercept
+  ) .
+  
+  -> liefern alle den gleichen p-Wert, da alle Methoden auf SumOfSquares basieren (desshalb lm wählen)
+  
+3. Bei der glm muss die family entsprechend der y - Verteilung angegeben werden. Dann liefert die anova der glm auch die gleichen werte
+
+# Zur VL "ANOVA oder der Gruppenvergleich"
+
+## Thema heute: Warum kommt bei lm , t-Test und ANOVA eigentlich das gleiche heraus?
+-> Aufgabe 4.2
+
+Facts:
+  - ANOVA rechnet man auf normalverteilten Daten (y)
+  - ANOVA Vergleicht die Varianz der Gruppendurchschnitte zum globalen Durchschnitt Also die variability between levels, UND die Varianz der Beobachtungen zum Gruppendurchschnitt , also variability within one level
+  - Teststatistic um festzustellen, ob der Unterschied zwischen den Gruppendurchschnitten signifikant ist :
+        F = (SSA / k-1) / (SSE / N-k)  -> Abweichung von Gruppe zum globalen Durschschnitt / Abweichung innerhalb der Gruppe
+        ist die F -Statistik signifikant, kann H0 agelehnt werden und es exisitert mindestens ein Mittelwertsunterschied zwischen den Gruppen exisitert. Welche zwei Gruppen ist unbekannt
+        
+  - TOTAl Variability = variability between treatments + variability within treatments
+        SST           =         SS                     +          SS or SSE
+
+Experiment : Acker mit verschiedenen Treatments (A,B,C).
+  - globalen Mittelwert von allen Treatments berechnen -> y*
+  - vergleich mit lokalen Mittelwerten der einzelnen Treatments
+  -> führt zur Berechnung von ABWEICHUNGSQUADRATEN (1. Schritt Richtung ANOVA)
+  
+Bei einem kontinuierlichen Y und einem X als factor (A,B,C) wollen wir keine glm Rechnen sondern einen Gruppenvergleich ! Und zwar als Kreuzprodukt AxBxC , sprich T-test Matrix
