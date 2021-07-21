@@ -1,0 +1,249 @@
+---
+title: "Pr�fung Statistik f�r Biowissenschaften 2"
+author: "Lilli Schuckert"
+date: "26 7 2021"
+output:
+  pdf_document: default
+  word_document: default
+subtitle: 'Pr�fer: Jochen Kruppa'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse,tidyverse, magrittr, multcomp, effectsize,
+               parameters, car, readxl, tableone, table1, survival, janitor,
+               PerformanceAnalytics, ggpubr, magrittr, mvtnorm, plyr, simstudy,
+               broom, mosaic, PerformanceAnalytics, FSA, psych, car, rcompanion,
+               lmtest, olsrr, blorr, sjPlot, visdat)
+
+data_dir <- file.path("C:/Users/lilli/OneDrive/Dokumente/R/Statistik 2")
+file <- file.path(data_dir, "Schuckert_Lilli.csv")
+tableone_file <- read_csv(file)
+prediction_file <- read_csv(file)
+
+```
+
+# Teil 1: Datenanalyse in R  
+
+
+In einer klinischen Studie wurden verschiedenste Variablen an Patienten während einer Operation erhoben. Der Endpunkt der Studie ist alseinziges noch bekannt:
+
+without_complication
+
+Interpretieren Sie die Covariaten eigenständig im Kontext der Studie und dem Endpunkt in einem kausalen Modell.
+
+### Kausales Modell
+
+
+Erstellen Sie sich eine Fragestellung passend zum Endpunkt!
+
+
+Erstellen Sie eine univariate, nach dem Endpunkt stratifizierte Übersichtstabelle mit allen
+Variablen! Beachten Sie für die Tabellendarstellung das jeweilige Skalenniveau und die deskriptiven
+Beschreibung der Variable! Es kann sein, dass Sie dafür den Endpunkt einzig und
+alleine für die Tabellendarstellung transformieren müssen.
+
+```{r table 1, echo=FALSE}
+#str(tableone_file)
+#dput(names(tableone_file))
+
+myVars <- c("age", "gender", "activity", "frailty", "surgery", "bloodpressure",
+            "height", "weight", "creatinin", "ISCED", "pet", "CRP", "ASA", 
+            "clinic", "complication", "POD", "without_complication")
+
+catVars <- c("complication", "POD")
+
+table_one <- CreateTableOne(vars = myVars, data = tableone_file, factorVars = catVars)
+print(table_one, showAllLevels = TRUE)
+
+```
+
+Wenn vorhanden, imputieren Sie die fehlenden Werte!
+imputieren:
+MCAR: missing completely at random
+MAR : Missing at random
+nicht imputieren:
+NMAR: Not missing at random
+
+```{r missings, echo=FALSE}
+vis_miss(tableone_file)
+```
+
+Führen Sie eine sinnvolle und begrenzte EDA durch!
+
+```{r eda}
+
+```
+
+
+
+Rechnen Sie eine multiple lineare Regression passend zum Endpunkt! Begründen Sie
+die Selektion ihrer Variablen! Wenn Sie eine Variablenselektion wählen, erklären Sie die
+Selektionsmethode.
+
+
+Interpretieren Sie das Ergebnis im Bezug auf die Signifikanz und die Effektschätzer für alle
+im Modell vorhanden Variablen! Geben Sie die passenden 95% Konfidenzintervalle für die
+Effektschätzer an!
+
+
+### Vertiefendes Thema: Prädiktionsmodell
+
+generiert sich aus einer multiplen linearen regression
+
+wir wollen neue patienten/tiere/menschen vorhersagen
+
+Postoperative delirium (POD) Endpunkt
+
+Trainingsdaten
+Ein Trainingsdatensatz ist ein Datensatz mit Beispielen (oder auch Zielvariablen genannt), die für das Lernen der Muster und Zusammenhänge in den Daten verwendet wird. Die Anpassung der Gewichte des Algorithmus wird über den Trainingsdatensatz antrainiert d.h. der Algorithmus lernt aus diesen Daten. Trainingsdaten mit Beispielen werden für Klassifikations- und Regressionsprobleme benötigt.
+
+Testdaten
+Die Testdaten sind von den Trainingsdaten unabhängig, sollten jedoch die gleiche Wahrscheinlichkeitsverteilung wie der Trainingsdatensatz aufweisen.
+Die Testdaten werden bei dem Training nicht genutzt d.h. der Algorithmus kennt die Daten nicht und kann diese nicht zum Lernen nutzen. Auch hier sind Beispiele bzw. Zielvariablen vorhanden, woran im Anschluss die Qualität des Modells gemessen werden kann.
+Wenn das trainierte Modell gut zu den Testdaten passt, d.h. die Beispieldaten mit einer guten Qualität vorhersagt, kann das Modell auf unbekannte (noch zu bewertende) Daten angewandt werden.
+
+to predict something(test data) with the help of something(training data)
+
+Daten vorbereiten:
+
+missing data
+```{r missing data}
+vis_miss(prediction_file)
+```
+
+strong correlated features
+1 = not correlated.
+Between 1 and 5 = moderately correlated.
+Greater than 5 = highly correlated
+```{r strong correlated features and feature selection}
+pred_correlation <- prediction_file %>% 
+   mutate_if(is.character, as.factor)
+
+olsrr_vif_model_null <- lm(POD ~ 1,
+                      data = pred_correlation)
+
+olsrr_vif_model_full <- lm(POD ~ age + gender + activity + frailty + surgery +
+                             bloodpressure +height + weight + creatinin +
+                             ISCED + pet + CRP+ ASA + clinic + complication +
+                             without_complication + anae_start + anae_end,
+                  data = pred_correlation)
+
+model <- olsrr::ols_vif_tol(olsrr_vif_model_full)
+model
+
+##bloodpressure, heigth, anae_start, anae_end raus
+```
+
+prediction model
+```{r prediction}
+pred_model_tbl <- prediction_file %>% 
+  mutate_if(is.character, as.factor)
+
+#ids hinzufügen
+id <- rownames(pred_model_tbl)
+pred_model_tbl <- cbind(id = id, pred_model_tbl)
+
+# in Training und Test aufteilen
+pod_train_tbl <- pred_model_tbl %>% dplyr::sample_frac(0.75) 
+pod_test_tbl <- dplyr::anti_join(pred_model_tbl,
+                                     pod_train_tbl, by = "id")
+
+table(pod_train_tbl$POD)/sum(table(pod_train_tbl$POD))
+table(pod_test_tbl$POD)/sum(table(pod_test_tbl$POD))
+
+# Model fitten
+fit <- glm(POD ~ age + gender + activity + frailty + surgery + weight +
+             creatinin + ISCED + pet + CRP + ASA + clinic + 
+             complication + without_complication, data=pred_model_tbl, family = binomial)
+
+# predicten
+pred_vec <- predict(fit, newdata = pod_test_tbl, type = "response")
+# pred_vec gibt jetzt fÃ¼r jedes POD an, die Wahrscheinlichkeit 1 zu sein
+```
+
+
+# Teil 2
+
+## Unterschied frequentistische Statistik vs. bayesianischen Statistik
+
+#### frequentistische Statistik:
+
+* objektive Wahrscheinlichkeit
+* Wir führen ein Experiment durch und kriegen die Wahrscheinlichkeit wieder für die Daten, wenn die $H_0$ wahr ist: $p(data|H_0)$
+* basiert auf wiederholten Messungen und ein Experiment ist voneinander unabhängig
+* Bsp. Hunde- und Katzenflöhe: Wir wenden Hypothesentests zum Signifikatnzniveau $\alpha$ an:  Besteht ein Unterschied zwischen Hunde- und Katzenflöhen bezüglich der Sprungweite.
+
+### bayesianische Statistik:
+
+* subjektive Wahrscheinlichkeit
+* Wir beobachten Daten und kriegen die Wahrscheinlichkeit für $H_0$ wieder(inverse propability):
+  + Wie wahrscheinlich sind Parameter gegeben der Daten die wir beobachten: $p(\theta|data) = \frac{p(data|\theta)*p(\theta)}{p(data)}$
+* Übersetzt heißt das grob: $posterior \propto likelihood*prior$, wobei $likelihood \approx plausibilität$ und $prior \approx Vorinformation$
+* posterior wird oft mit MCMC(Monte-Carlo-Markov-Chain) simuliert
+* Bsp. Hunde- und Katzenflöhe: Wir wissen grob, in welchem Bereich Hunde- und Katzenflöhe springen(prior), d.h. wir haben eine Wahrscheinlichkeitsverteilung N(). Dann werden Daten gesammelt und die posterior Verteilung wird über MCMC simuliert. Wir bekommen dann die Wahrscheinlichkeit für die Parameter gegeben der Daten
+
+
+## Kenngrößen einer Fallzahlplanung für einen verteilten Endpunkt
+* Effektsize
+  + Außmaß des Effektes, den wir messen wollen
+* Power
+  + Wahrscheinlichkeit, die Nullhypothese richtig abzulehnen, wenn sie falsch ist
+  + Entspricht Fehler 2. Art
+  + Standard: 0.8
+  + Umso mehr Power verlangt wird, umso mehr samples werden benÃ¶tigt
+* Signifikanzniveau $\alpha$
+  + Wahrscheinlichkeit, die Nullhypothese fälschlicherweise abzulehnen, obwohl sie wahr ist
+  + Entspricht Fehler 1. Art
+  + Standard: 0.05
+  + Umso geringer das Signifikanzniveau, umso mehr samples werden benÃ¶tigt
+  
+![](/Users/lilli/OneDrive/Dokumente/R/Statistik 2/Fallzahlplanung.jpeg)
+
+
+## Effektschätzer eines nicht-parametrischen Verfahrens
+
+* nicht-parametrik: Statistische Tests für nicht-normalverteilte Daten  
+* Nicht-parametrische Verfahren:
+  + u-Test(Mann-Whitney, Wilcoxon)
+  + Mann Whitney U Test: nichtparametrisch, unabhÃ¤ngige Stichproben, ungepaart, Gruppenvergleich zwischen verschiedenen treatments
+  + Wilcoxen Test: nichtparametrisch, abhÃ¤ngige Stichproben, gepaart, Gruppenvergleich vorher/nachher
+  + Kruskal-Wallis 
+* U-Test:
+  + es gibt eigentlich keine Effektschätzer, weil man zentrale Tendenzen zweier unabhängiger Stichproben vergleicht
+* Kruskal-Wallis:
+  + es gibt keinen eigenen Effektschätzer
+  + Möglichkeit: für jeden Gruppenvergleich Effektstärke r berechnen: $r = \frac{z}{\sqrt N}$  
+* Interpretation: 
+
+## Dunnett Kontrast vs. Tukey Kontrast
+
+* Kontraste brauchen wir dafür um zu sagen, welche Gruppen wir miteinander vergleichen wollen
+* Summe jeder Spalte muss immer 0 sein
+
+### Dunnett
+
+* many-to-one Kontrast
+  + a ist unsere Kontrolle: Wir vergleichen alles zu a
+
+```{r Dunnett Konstrast, echo=TRUE, collapse=TRUE}
+contrMat(n = c("a" = 10, "b" = 10, "c" = 10, "d" = 10), type = "Dunnett")
+```
+
+### Tukey Kontrast
+
+* pairwise t-test Kontrast
+  + all pair Kontrast
+
+```{r Tukey Konstrast, echo=TRUE, collapse=TRUE}
+contrMat(n = c("a" = 10, "b" = 10, "c" = 10, "d" = 10), type = "Tukey")
+```
+
+## ermittelte signifikante Ergebnisse mit logrank Methode (Kaplan Meyer) vs.ermittelte signifikante Ergebnisse mit coxph Methode
+
+
+
+
+
+
